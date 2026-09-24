@@ -1,0 +1,37 @@
+{
+  "STATS19 collisions, 1979 to latest year": {
+    "url": "https://data.dft.gov.uk/road-accidents-safety-data/dft-road-casualty-statistics-collision-1979-latest-published-year.csv",
+    "file": "data/raw/dft-road-casualty-statistics-collision-1979-latest-published-year.csv",
+    "bytes": 1534937928,
+    "sha256": "4b60aac426b8fb7771dc9a3fc3e383399e88c9a49041544926aec4bea409e366",
+    "retrieved_utc": "2026-09-24T01:06:07+00:00"
+  },
+  "STATS19 vehicles, 1979 to latest year": {
+    "url": "https://data.dft.gov.uk/road-accidents-safety-data/dft-road-casualty-statistics-vehicle-1979-latest-published-year.csv",
+    "file": "data/raw/dft-road-casualty-statistics-vehicle-1979-latest-published-year.csv",
+    "bytes": 1784162843,
+    "sha256": "26ec0431ec5c18bafcad549c3b239bfd6f6495db8a1a305add0ccb0aa888e78d",
+    "retrieved_utc": "2026-09-24T01:09:44+00:00"
+  },
+  "STATS19 casualties, 1979 to latest year": {
+    "url": "https://data.dft.gov.uk/road-accidents-safety-data/dft-road-casualty-statistics-casualty-1979-latest-published-year.csv",
+    "file": "data/raw/dft-road-casualty-statistics-casualty-1979-latest-published-year.csv",
+    "bytes": 965080463,
+    "sha256": "88c07543b1b762d2dad9faf90a701d7a1ddd08b750c5572e8e66fa8e1787b0e7",
+    "retrieved_utc": "2026-09-24T01:11:40+00:00"
+  },
+  "STATS19 data guide (code lookups), 2025": {
+    "url": "https://assets.publishing.service.gov.uk/media/6a63900b2dc18ebe4c3b2bc8/dft-road-casualty-statistics-road-safety-open-dataset-data-guide-2025.xlsx",
+    "file": "data/raw/dft-road-casualty-statistics-road-safety-open-dataset-data-guide-2025.xlsx",
+    "bytes": 81378,
+    "sha256": "5ee0d473e212ed50b2723ae52feeda86487861ed6a5a627b900f7b93c9bbf6b6",
+    "retrieved_utc": "2026-09-24T01:11:40+00:00"
+  },
+  "Severity adjustment guidance": {
+    "url": "https://assets.publishing.service.gov.uk/media/691c644021ef5aaa6543eef0/dft-road-casualty-statistics-severity-adjustment-figure-guidance.docx",
+    "file": "data/raw/dft-road-casualty-statistics-severity-adjustment-figure-guidance.docx",
+    "bytes": 18111,
+    "sha256": "9a0db9e666e696a8c4e61dd6c1eccd0d957e0a5871cd7c4439d43b63893bced8",
+    "retrieved_utc": "2026-09-24T01:11:40+00:00"
+  }
+}

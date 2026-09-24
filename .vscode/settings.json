@@ -1,0 +1,20 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+  "files.exclude": {
+    "**/__pycache__": true,
+    ".venv": true
+  },
+  "search.exclude": {
+    "data/": true
+  },
+  "sqltools.connections": [
+    {
+      "name": "speed_gb (local)",
+      "driver": "PostgreSQL",
+      "server": "localhost",
+      "port": 5432,
+      "database": "speed_gb",
+      "username": "admin"
+    }
+  ]
+}

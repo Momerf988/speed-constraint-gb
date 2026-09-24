@@ -1,0 +1,20 @@
+# Raw and derived data are reproducible from ingest/ and are too large for git.
+data/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# dbt
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+
+# OS
+.DS_Store
+
+# Private learning material and notes. Never published.
+START-HERE.md
+guide/
+notes/

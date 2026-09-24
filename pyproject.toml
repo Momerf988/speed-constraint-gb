@@ -1,0 +1,10 @@
+[project]
+name = "speed-constraint-gb"
+version = "0.1.0"
+description = "Binding the Limit: the casualty and travel-time trade-off of vehicle speed constraints in Great Britain"
+requires-python = ">=3.12"
+# Dependencies are added phase by phase, when the phase that needs them starts.
+dependencies = [
+    "psycopg[binary]>=3.2",
+    "openpyxl>=3.1",
+]
