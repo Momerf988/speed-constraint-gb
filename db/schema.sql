@@ -1,4 +1,5 @@
-create schema if not exists raw;
+drop schema if exists raw cascade;
+create schema raw;
 
 CREATE TABLE raw.collision (
     collision_index text,
@@ -10,7 +11,6 @@ CREATE TABLE raw.collision (
     latitude double precision,
     police_force smallint,
     collision_severity smallint,
-    enhanced_collision_severity smallint,
     number_of_vehicles smallint,
     number_of_casualties smallint,
     date date,
@@ -39,21 +39,20 @@ CREATE TABLE raw.collision (
     carriageway_hazards_historic smallint,
     carriageway_hazards smallint,
     urban_or_rural_area smallint,
-    did_police_officer_attend_scene_of_collision smallint,
     did_police_officer_attend_scene_of_accident smallint,
     trunk_road_flag smallint,
-    lsoa_of_collision_location text,
     lsoa_of_accident_location text,
+    enhanced_severity_collision smallint,
     collision_injury_based smallint,
-    collision_adjusted_serious double precision,
-    collision_adjusted_slight double precision
+    collision_adjusted_severity_serious double precision,
+    collision_adjusted_severity_slight double precision
 );
 
 CREATE TABLE raw.vehicle (
     collision_index text,
     collision_year smallint,
     collision_ref_no text,
-    vehicle_reference text,
+    vehicle_reference smallint,
     vehicle_type smallint,
     towing_and_articulation smallint,
     vehicle_manoeuvre_historic smallint,
@@ -74,7 +73,7 @@ CREATE TABLE raw.vehicle (
     sex_of_driver smallint,
     age_of_driver smallint,
     age_band_of_driver smallint,
-    engine_capacity_cc smallint,
+    engine_capacity_cc integer,
     propulsion_code smallint,
     age_of_vehicle smallint,
     generic_make_model text,
@@ -88,14 +87,13 @@ CREATE TABLE raw.casualty (
     collision_index text,
     collision_year smallint,
     collision_ref_no text,
-    vehicle_reference text,
-    casualty_reference text,
+    vehicle_reference smallint,
+    casualty_reference smallint,
     casualty_class smallint,
     sex_of_casualty smallint,
     age_of_casualty smallint,
     age_band_of_casualty smallint,
     casualty_severity smallint,
-    enhanced_casualty_severity smallint,
     pedestrian_location smallint,
     pedestrian_movement smallint,
     car_passenger smallint,
@@ -104,8 +102,9 @@ CREATE TABLE raw.casualty (
     casualty_type smallint,
     casualty_imd_decile smallint,
     lsoa_of_casualty text,
+    enhanced_casualty_severity smallint,
     casualty_injury_based smallint,
-    casualty_adjusted_serious double precision,
-    casualty_adjusted_slight double precision,
+    casualty_adjusted_severity_serious double precision,
+    casualty_adjusted_severity_slight double precision,
     casualty_distance_banding smallint
 );
