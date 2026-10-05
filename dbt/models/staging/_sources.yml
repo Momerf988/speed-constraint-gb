@@ -1,0 +1,15 @@
+version: 2
+
+sources:
+  - name: raw
+    description: STATS19 tables loaded unchanged from the DfT CSV files by db/load.py, plus code lists from db/lookups.py.
+    schema: raw
+    tables:
+      - name: collision
+        description: One row per reported injury collision, 1979 onwards.
+      - name: vehicle
+        description: One row per vehicle involved in a collision.
+      - name: casualty
+        description: One row per person injured.
+      - name: code_list
+        description: Code-to-label lookups from the DfT data guide, renamed to match the CSV column names.

@@ -1,0 +1,33 @@
+name: speed_constraint_gb
+version: "1.0.0"
+profile: speed_gb
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+vars:
+  # DfT's severity adjustment (probability of a casualty being serious) exists from 2004.
+  adjusted_severity_first_year: 2004
+
+models:
+  speed_constraint_gb:
+    # Staging: one view per raw table. Rename, type, turn -1 into null. Nothing else.
+    staging:
+      +schema: staging
+      +materialized: view
+    # Intermediate: derived attributes and severity measures. Views, so no extra storage.
+    intermediate:
+      +schema: intermediate
+      +materialized: view
+    # Marts: the star schema and aggregates. Stored as tables because they are queried often.
+    marts:
+      +schema: marts
+      +materialized: table
+
+seeds:
+  speed_constraint_gb:
+    +schema: reference

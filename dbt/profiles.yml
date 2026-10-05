@@ -1,0 +1,14 @@
+# How dbt connects to Postgres. Values come from environment variables when set
+# (as they will be in the cloud), and fall back to the local database otherwise.
+speed_gb:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('PGHOST', 'localhost') }}"
+      port: "{{ env_var('PGPORT', '5432') | int }}"
+      user: "{{ env_var('PGUSER', env_var('USER', 'postgres')) }}"
+      password: "{{ env_var('PGPASSWORD', '') }}"
+      dbname: "{{ env_var('PGDATABASE', 'speed_gb') }}"
+      schema: analytics
+      threads: 4
