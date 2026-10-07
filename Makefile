@@ -1,4 +1,4 @@
-.PHONY: setup ingest db
+.PHONY: setup ingest db transform docs export
 
 # Create the Python environment from pyproject.toml.
 setup:
@@ -15,3 +15,15 @@ db:
 	uv run python db/load.py
 	psql -d speed_gb -v ON_ERROR_STOP=1 -f db/constraints.sql
 	uv run python db/lookups.py
+
+# Phase 3: build the staging, intermediate and mart layers with dbt, and run every test.
+transform:
+	cd dbt && uv run dbt build
+
+# Phase 3: browse the dbt documentation and lineage graph in a web browser.
+docs:
+	cd dbt && uv run dbt docs generate && uv run dbt docs serve
+
+# Phase 3: export the marts to Parquet files in data/marts/.
+export:
+	uv run python export/export_parquet.py
