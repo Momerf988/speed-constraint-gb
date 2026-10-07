@@ -1,0 +1,116 @@
+version: 2
+
+models:
+  - name: dim_date
+    description: One row per calendar day for every year in the data.
+    columns:
+      - name: date_key
+        description: The date as an integer, YYYYMMDD.
+        data_tests: [unique, not_null]
+
+  - name: dim_road
+    description: One row per road environment (speed limit, road type, road class, urban/rural).
+    columns:
+      - name: road_key
+        data_tests: [unique, not_null]
+      - name: speed_limit_kmh
+        description: The posted limit converted to km/h. Null when the limit is not a standard UK limit.
+      - name: traffic_road_category
+        description: The road category DfT uses for traffic volumes, so casualties can be divided by vehicle-km.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Motorway', 'Urban A road', 'Urban minor road', 'Rural A road', 'Rural minor road', 'Unknown']
+
+  - name: dim_police_force
+    description: One row per police force, with its country.
+    columns:
+      - name: police_force_code
+        data_tests: [unique, not_null]
+      - name: country
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['England', 'Wales', 'Scotland']
+
+  - name: dim_casualty_profile
+    description: Junk dimension combining casualty class, type, sex and age band.
+    columns:
+      - name: casualty_profile_key
+        data_tests: [unique, not_null]
+
+  - name: fct_collision
+    description: One row per collision.
+    columns:
+      - name: collision_index
+        data_tests: [unique, not_null]
+      - name: date_key
+        description: Null for the 8 collisions published without a date.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+      - name: road_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_road')
+                field: road_key
+      - name: police_force_code
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_police_force')
+                field: police_force_code
+      - name: collision_severity
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3]
+                quote: false
+
+  - name: fct_casualty
+    description: One row per casualty. The main fact table of the project.
+    columns:
+      - name: casualty_key
+        description: collision_index, vehicle_reference and casualty_reference joined into one value.
+        data_tests: [unique, not_null]
+      - name: road_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_road')
+                field: road_key
+      - name: date_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+      - name: police_force_code
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_police_force')
+                field: police_force_code
+      - name: casualty_profile_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_casualty_profile')
+                field: casualty_profile_key
+      - name: casualty_severity
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3]
+                quote: false
+      - name: ksi_adjusted
+        description: 1 for a fatality, otherwise the probability of being serious. Null before 2004.
+
+  - name: agg_casualties_year_road
+    description: Casualties per year and road environment, summarised from fct_casualty.

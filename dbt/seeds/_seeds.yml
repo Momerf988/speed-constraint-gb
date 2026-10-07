@@ -1,0 +1,16 @@
+version: 2
+
+seeds:
+  - name: dft_published_totals
+    description: >
+      Headline totals from DfT's own publications. The test
+      assert_matches_dft_published_totals checks the marts reproduce them.
+      Adjusted KSI is only checked for the latest year: DfT re-estimates the severity
+      adjustment every year, so older published KSI figures get revised.
+    config:
+      column_types:
+        year: smallint
+        measure: text
+        published_value: numeric
+        tolerance: numeric
+        source: text
