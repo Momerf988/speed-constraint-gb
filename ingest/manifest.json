@@ -23,9 +23,9 @@
   "STATS19 data guide (code lookups), 2025": {
     "url": "https://assets.publishing.service.gov.uk/media/6a63900b2dc18ebe4c3b2bc8/dft-road-casualty-statistics-road-safety-open-dataset-data-guide-2025.xlsx",
     "file": "data/raw/dft-road-casualty-statistics-road-safety-open-dataset-data-guide-2025.xlsx",
-    "bytes": 81378,
-    "sha256": "5ee0d473e212ed50b2723ae52feeda86487861ed6a5a627b900f7b93c9bbf6b6",
-    "retrieved_utc": "2026-09-24T01:11:40+00:00"
+    "bytes": 85112,
+    "sha256": "51b08606ef3dad1ae5d4c8726241b022fc8e4bbdc910ef0e5cc2fb92b054fc12",
+    "retrieved_utc": "2026-10-08T16:43:42+00:00"
   },
   "Severity adjustment guidance": {
     "url": "https://assets.publishing.service.gov.uk/media/691c644021ef5aaa6543eef0/dft-road-casualty-statistics-severity-adjustment-figure-guidance.docx",
@@ -33,5 +33,12 @@
     "bytes": 18111,
     "sha256": "9a0db9e666e696a8c4e61dd6c1eccd0d957e0a5871cd7c4439d43b63893bced8",
     "retrieved_utc": "2026-09-24T01:11:40+00:00"
+  },
+  "DfT TRA0202 traffic, billion vehicle-km by road class, 1993 onwards": {
+    "url": "https://assets.publishing.service.gov.uk/media/6a0b7cb4c510c3913d8267cc/tra0202-km-by-road-class.ods",
+    "file": "data/raw/tra0202-km-by-road-class.ods",
+    "bytes": 46956,
+    "sha256": "ae471a7f9c6551f1a72646aa40cb92de54f4b935b0192770338fd2592aebd6cb",
+    "retrieved_utc": "2026-10-08T16:43:42+00:00"
   }
 }

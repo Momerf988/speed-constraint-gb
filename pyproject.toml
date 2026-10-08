@@ -9,4 +9,6 @@ dependencies = [
     "openpyxl>=3.1",
     "duckdb>=1.5.6",
     "dbt-postgres>=1.11.0",
+    "pandas>=3.0.6",
+    "odfpy>=1.4.1",
 ]

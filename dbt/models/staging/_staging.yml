@@ -1,0 +1,15 @@
+version: 2
+
+models:
+  - name: stg_traffic_road_class
+    description: DfT traffic (TRA0202) in long form, one row per year and road category, using the same category names as int_collision_enriched.
+    columns:
+      - name: year
+        data_tests: [not_null]
+      - name: traffic_road_category
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Motorway', 'Urban A road', 'Urban minor road', 'Rural A road', 'Rural minor road']
+      - name: billion_vehicle_km
+        data_tests: [not_null]

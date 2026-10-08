@@ -27,3 +27,10 @@ docs:
 # Phase 3: export the marts to Parquet files in data/marts/.
 export:
 	uv run python export/export_parquet.py
+
+db:
+	psql -d speed_gb -v ON_ERROR_STOP=1 -f db/schema.sql
+	uv run python db/load.py
+	psql -d speed_gb -v ON_ERROR_STOP=1 -f db/constraints.sql
+	uv run python db/lookups.py
+	uv run python db/load_traffic.py
