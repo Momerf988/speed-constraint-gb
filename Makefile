@@ -34,3 +34,7 @@ db:
 	psql -d speed_gb -v ON_ERROR_STOP=1 -f db/constraints.sql
 	uv run python db/lookups.py
 	uv run python db/load_traffic.py
+
+# Phase 4: RQ1 rates and charts, written to figures/.
+rq1:
+	uv run python analysis/rq1_rates.py

@@ -33,6 +33,7 @@ TABLES = [
     "fct_collision",
     "fct_casualty",
     "agg_casualties_year_road",
+    "agg_rates_year_road_category",
 ]
 
 

@@ -7,10 +7,10 @@ This project answers that with the government's own data and appraisal values: e
 police-reported injury collision since 1979, DfT traffic and speed statistics, and DfT's
 official values for a prevented casualty and for an hour of travel time.
 
-**Status:** Phase 3 of 9 complete. All 37.5 million STATS19 rows (1979–2025) are loaded into
-PostgreSQL and modelled with dbt into a tested star schema. The pipeline reproduces DfT's
-published 2025 headline figures (127,883 casualties, 1,538 deaths, 29,918 killed or seriously
-injured), checked automatically on every build. The marts are exported to Parquet.
+**Status:** Phase 4 of 9 complete. All 37.5 million STATS19 rows (1979–2025) are loaded into
+PostgreSQL and modelled with dbt into a tested star schema, joined to DfT motor-vehicle
+traffic to give rates per billion vehicle-km. The pipeline reproduces DfT's published 2025
+headline figures and all 15 of its 2025 casualty counts by road type, checked on every build.
 
 ## Pipeline
 
@@ -29,6 +29,18 @@ DfT CSV files → PostgreSQL (raw) → dbt: staging → intermediate → star sc
 values, row conservation from raw to facts, the rules of DfT's severity adjustment, and
 reconciliation against DfT's published totals.
 
+
+## RQ1: where harm happens, per kilometre driven
+
+![Deaths vs traffic by road environment, 2025](figures/rq1_share_deaths_vs_traffic.png)
+
+- Rural roads carried 45% of 2025 traffic but 60% of deaths. Rural minor roads had the
+  highest death rate: 4.4 per billion vehicle-km, against 0.8 on motorways.
+- Serious injuries rank the other way: adjusted KSI rates are highest on urban roads
+  (88–93 per billion vehicle-km) and lowest on rural A roads apart from motorways (37).
+- These are descriptive rates, not causal estimates. Traffic is DfT's motor-vehicle estimate;
+  DfT's own published rates also include pedal cycles, so they run 1–3% lower.
+
 ## Run it
 
 Requires Python 3.12+, [uv](https://docs.astral.sh/uv/) and PostgreSQL 17 with a database
@@ -41,6 +53,7 @@ make db         # build the raw database: schema, bulk load, keys, code lookups
 make transform  # build the dbt layers and run all 29 tests
 make export     # export the marts to Parquet in data/marts/
 make docs       # browse the documentation and lineage graph
+make rq1        # RQ1 rates and charts, written to figures/
 ```
 
 ## Deliberately not used

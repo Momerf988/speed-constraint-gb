@@ -11,4 +11,5 @@ dependencies = [
     "dbt-postgres>=1.11.0",
     "pandas>=3.0.6",
     "odfpy>=1.4.1",
+    "matplotlib>=3.11.2",
 ]

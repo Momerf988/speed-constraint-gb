@@ -114,3 +114,22 @@ models:
 
   - name: agg_casualties_year_road
     description: Casualties per year and road environment, summarised from fct_casualty.
+
+
+  - name: agg_rates_year_road_category
+    description: Casualty, death and KSI (adjusted) rates per billion motor-vehicle-km, by year and road category, 1994 onwards.
+    columns:
+      - name: traffic_road_category
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Motorway', 'Urban A road', 'Urban minor road', 'Rural A road', 'Rural minor road']
+      - name: road_environment
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Motorway', 'Urban', 'Rural']
+      - name: billion_vehicle_km
+        data_tests: [not_null]
+      - name: killed_per_bn_vkm
+        data_tests: [not_null]

@@ -31,3 +31,9 @@ models:
 seeds:
   speed_constraint_gb:
     +schema: reference
+
+vars:
+  # DfT's severity adjustment (probability of a casualty being serious) exists from 2004.
+  adjusted_severity_first_year: 2004
+  # STATS19 started recording urban/rural in 1994; earlier casualties have no road category.
+  urban_rural_first_year: 1994

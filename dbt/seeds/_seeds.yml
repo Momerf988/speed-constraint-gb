@@ -14,3 +14,16 @@ seeds:
         published_value: numeric
         tolerance: numeric
         source: text
+
+  - name: dft_published_road_type_counts
+    description: >
+      DfT's published 2025 counts by road type and class (table RAS0302). The test
+      assert_matches_dft_road_type_counts checks the road categories reproduce them.
+    config:
+      column_types:
+        year: smallint
+        traffic_road_category: text
+        measure: text
+        published_value: numeric
+        tolerance: numeric
+        source: text
