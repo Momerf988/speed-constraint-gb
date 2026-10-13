@@ -1,0 +1,5 @@
+parameter_id,model,outcome,value,ci_low,ci_high,unit,valid_range,source,location_in_source,status
+power_exponent_fatalities,power,fatalities,5.5,,,exponent,"speed limits 50-130 km/h; mostly small speed changes","Elvik, Vadeby, Hels & van Schagen (2019) AAP 123:114-122","quoted in Ambros & Kiec (2025) ETRR 17:59, section 1.1",secondary
+power_exponent_injury_crashes,power,injury_crashes,3.9,,,exponent,"speed limits 50-130 km/h; mostly small speed changes","Elvik, Vadeby, Hels & van Schagen (2019) AAP 123:114-122","quoted in Ambros & Kiec (2025) ETRR 17:59, section 1.1",secondary
+exponential_coef_fatalities,exponential,fatalities,0.08,,,per km/h,"speed limits 50-130 km/h; mostly small speed changes","Elvik, Vadeby, Hels & van Schagen (2019) AAP 123:114-122","quoted in Ambros & Kiec (2025) ETRR 17:59, section 1.1; consistent with European Commission (2021) Figure 1",secondary
+exponential_coef_injury_crashes,exponential,injury_crashes,0.06,,,per km/h,"speed limits 50-130 km/h; mostly small speed changes","Elvik, Vadeby, Hels & van Schagen (2019) AAP 123:114-122","quoted in Ambros & Kiec (2025) ETRR 17:59, section 1.1",secondary

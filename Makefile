@@ -1,4 +1,4 @@
-.PHONY: setup ingest db transform docs export
+.PHONY: setup ingest db transform docs export rq1
 
 # Create the Python environment from pyproject.toml.
 setup:
@@ -8,13 +8,15 @@ setup:
 ingest:
 	uv run python ingest/download.py
 
-# Phase 2: rebuild the raw database from the downloaded files.
-# Drops and recreates the raw schema, loads the CSVs, then adds keys and code lookups.
+# Phase 2 and 4: rebuild the raw database from the downloaded files.
+# Drops and recreates the raw schema, loads the CSVs, adds keys and code lookups,
+# then loads DfT traffic (TRA0202).
 db:
 	psql -d speed_gb -v ON_ERROR_STOP=1 -f db/schema.sql
 	uv run python db/load.py
 	psql -d speed_gb -v ON_ERROR_STOP=1 -f db/constraints.sql
 	uv run python db/lookups.py
+	uv run python db/load_traffic.py
 
 # Phase 3: build the staging, intermediate and mart layers with dbt, and run every test.
 transform:
@@ -27,13 +29,6 @@ docs:
 # Phase 3: export the marts to Parquet files in data/marts/.
 export:
 	uv run python export/export_parquet.py
-
-db:
-	psql -d speed_gb -v ON_ERROR_STOP=1 -f db/schema.sql
-	uv run python db/load.py
-	psql -d speed_gb -v ON_ERROR_STOP=1 -f db/constraints.sql
-	uv run python db/lookups.py
-	uv run python db/load_traffic.py
 
 # Phase 4: RQ1 rates and charts, written to figures/.
 rq1:
