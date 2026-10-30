@@ -1,0 +1,1 @@
+"""The casualty model for Phase 6: speed-risk parameters, risk curves and policy scenarios."""

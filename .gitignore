@@ -19,3 +19,4 @@ START-HERE.md
 guide/
 notes/
 dbt/.user.yml
+results/

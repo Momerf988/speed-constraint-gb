@@ -33,3 +33,11 @@ export:
 # Phase 4: RQ1 rates and charts, written to figures/.
 rq1:
 	uv run python analysis/rq1_rates.py
+
+# Phase 6: run the Python model tests.
+test:
+	uv run pytest -q
+
+# Phase 6: speed distributions from DfT's bands, written to results/ and figures/.
+speeds:
+	uv run python -m analysis.fit_speeds
