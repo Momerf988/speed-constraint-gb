@@ -1,4 +1,4 @@
-.PHONY: setup ingest db transform docs export rq1 test speeds
+.PHONY: setup ingest db transform docs export rq1 test speeds rq2
 
 # Create the Python environment from pyproject.toml.
 setup:
@@ -42,3 +42,7 @@ test:
 # Phase 6: speed distributions from DfT's bands, written to results/ and figures/.
 speeds:
 	uv run python -m analysis.fit_speeds
+
+# Phase 6: RQ2 and RQ4, deaths and injuries prevented by each policy, written to results/ and figures/.
+rq2:
+	uv run python -m analysis.rq2_rq4

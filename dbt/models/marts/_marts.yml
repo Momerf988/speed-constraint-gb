@@ -115,7 +115,6 @@ models:
   - name: agg_casualties_year_road
     description: Casualties per year and road environment, summarised from fct_casualty.
 
-
   - name: agg_rates_year_road_category
     description: Casualty, death and KSI (adjusted) rates per billion motor-vehicle-km, by year and road category, 1994 onwards.
     columns:
@@ -132,4 +131,21 @@ models:
       - name: billion_vehicle_km
         data_tests: [not_null]
       - name: killed_per_bn_vkm
+        data_tests: [not_null]
+
+  - name: agg_casualties_segment_year
+    description: >
+      Casualties per year from 2010 on the four road types with DfT free-flow speed data
+      (32 and 48 km/h roads, 97 km/h single carriageways, 113 km/h motorways) and on all other
+      roads, with how many were in collisions involving a car, taxi or van. The casualty model's baseline.
+    columns:
+      - name: year
+        data_tests: [not_null]
+      - name: segment
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['32 km/h roads', '48 km/h roads', '97 km/h single carriageways', '113 km/h motorways', 'not modelled']
+      - name: casualties
         data_tests: [not_null]
