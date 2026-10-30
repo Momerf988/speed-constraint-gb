@@ -40,5 +40,12 @@
     "bytes": 46956,
     "sha256": "ae471a7f9c6551f1a72646aa40cb92de54f4b935b0192770338fd2592aebd6cb",
     "retrieved_utc": "2026-10-08T16:43:42+00:00"
+  },
+  "DfT SPE0102 free-flow vehicle speeds by road type and vehicle type, 2018 onwards": {
+    "url": "https://assets.publishing.service.gov.uk/media/685a8814db207fc18744d5ed/spe0102.ods",
+    "file": "data/raw/spe0102.ods",
+    "bytes": 85504,
+    "sha256": "ed33bcea35b7a0b5d84209d97d6d96ed7be6b43c063d14fb8e393790319c8b02",
+    "retrieved_utc": "2026-10-30T14:04:48+00:00"
   }
 }

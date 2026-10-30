@@ -34,7 +34,7 @@ SOURCES = {
     "STATS19 data guide (code lookups), 2025": f"{GOVUK}/6a63900b2dc18ebe4c3b2bc8/dft-road-casualty-statistics-road-safety-open-dataset-data-guide-2025.xlsx",
     "Severity adjustment guidance": f"{GOVUK}/691c644021ef5aaa6543eef0/dft-road-casualty-statistics-severity-adjustment-figure-guidance.docx",
     "DfT TRA0202 traffic, billion vehicle-km by road class, 1993 onwards": f"{GOVUK}/6a0b7cb4c510c3913d8267cc/tra0202-km-by-road-class.ods",
-
+    "DfT SPE0102 free-flow vehicle speeds by road type and vehicle type, 2018 onwards": f"{GOVUK}/685a8814db207fc18744d5ed/spe0102.ods",
 
 }
 

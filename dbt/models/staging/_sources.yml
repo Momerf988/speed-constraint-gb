@@ -15,3 +15,5 @@ sources:
         description: Code-to-label lookups from the DfT data guide, renamed to match the CSV column names.
       - name: traffic_tra0202
         description: DfT table TRA0202, motor vehicle traffic in billion vehicle-km by road class, Great Britain, 1993 onwards. Loaded unchanged by db/load_traffic.py.
+      - name: speed_spe0102
+        description: DfT table SPE0102, free-flow vehicle speeds by road type and vehicle type, Great Britain, 2018 onwards. One row per sheet row, values as published text. Loaded by db/load_speed.py.

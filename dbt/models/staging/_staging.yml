@@ -13,3 +13,15 @@ models:
                 values: ['Motorway', 'Urban A road', 'Urban minor road', 'Rural A road', 'Rural minor road']
       - name: billion_vehicle_km
         data_tests: [not_null]
+  - name: stg_speed_bands_cars
+    description: Free-flow car speed bands from SPE0102, one row per year, road type and 5 mph band.
+    columns:
+      - name: speed_limit_mph
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [20, 30, 60, 70]
+                quote: false
+      - name: band_lower_mph
+        data_tests: [not_null]
