@@ -1,4 +1,4 @@
-.PHONY: setup ingest db transform docs export rq1
+.PHONY: setup ingest db transform docs export rq1 test speeds
 
 # Create the Python environment from pyproject.toml.
 setup:
@@ -18,6 +18,7 @@ db:
 	uv run python db/lookups.py
 	uv run python db/load_traffic.py
 	uv run python db/load_speed.py
+
 # Phase 3: build the staging, intermediate and mart layers with dbt, and run every test.
 transform:
 	cd dbt && uv run dbt build
