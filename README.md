@@ -25,7 +25,7 @@ DfT CSV files → PostgreSQL (raw) → dbt: staging → intermediate → star sc
 | `intermediate` | km/h speed limits, DfT road categories, keys, reported and adjusted severity (views) |
 | `marts` | Star schema: `fct_casualty`, `fct_collision`, `dim_date`, `dim_road`, `dim_police_force`, `dim_casualty_profile`, plus `agg_casualties_year_road` (tables) |
 
-29 data tests run on every build: key uniqueness, fact-to-dimension relationships, allowed
+49 data tests run on every build: key uniqueness, fact-to-dimension relationships, allowed
 values, row conservation from raw to facts, the rules of DfT's severity adjustment, and
 reconciliation against DfT's published totals.
 
@@ -50,7 +50,7 @@ called `speed_gb`.
 make setup      # create the Python environment
 make ingest     # download the raw data (about 4.3 GB) and write ingest/manifest.json
 make db         # build the raw database: schema, bulk load, keys, code lookups
-make transform  # build the dbt layers and run all 29 tests
+make transform  # build the dbt layers and run all 49 tests
 make export     # export the marts to Parquet in data/marts/
 make docs       # browse the documentation and lineage graph
 make rq1        # RQ1 rates and charts, written to figures/
