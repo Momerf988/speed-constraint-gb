@@ -1,0 +1,14 @@
+# Keep the image small and free of local data, results and private notes.
+.git
+.github
+.venv
+data/
+results/
+figures/
+dbt/target/
+dbt/logs/
+ci/sample/
+**/__pycache__
+START-HERE.md
+guide/
+notes/

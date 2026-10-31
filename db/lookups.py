@@ -39,6 +39,16 @@ GUIDE_TO_CSV = {
     "casualty_adjusted_slight": "casualty_adjusted_severity_slight",
 }
 
+# Codes the guide labels twice, and the label kept. The 2025 guide lists casualty type 23 as
+# both "Electric motorcycle rider or passenger" (2011 specification) and "Personal Powered
+# Transporter" (2024 specification). Vehicle type 23 is only "Electric motorcycle", personal
+# powered transporters have their own vehicle type (33), and 1,909 of the 1,910 type-23
+# casualties are in a type-23 vehicle, so the second row is an error in the guide.
+# Any other code with two labels still stops the load.
+KNOWN_GUIDE_ERRORS = {
+    ("casualty", "casualty_type", "23"): "Electric motorcycle rider or passenger",
+}
+
 # Codes are stored as text because some are area codes such as 'E06000001'.
 # Numeric raw columns are joined with a cast, e.g. l.code = c.speed_limit::text.
 DDL = """
@@ -76,7 +86,7 @@ def text(value) -> str | None:
 def code_list_rows(workbook) -> tuple[list[tuple], dict[str, int]]:
     rows: dict[tuple, tuple] = {}
     stats = {"read": 0, "kept": 0, "renamed": 0, "skipped: not a data table": 0,
-             "skipped: no code or no label": 0, "skipped: duplicate": 0}
+             "skipped: no code or no label": 0, "skipped: duplicate": 0, "skipped: known guide error": 0}
 
     for table, field, code, label, note in workbook["2024_code_list"].iter_rows(min_row=2, values_only=True):
         stats["read"] += 1
@@ -92,6 +102,9 @@ def code_list_rows(workbook) -> tuple[list[tuple], dict[str, int]]:
             stats["renamed"] += 1
 
         key = (table, field, code)
+        if key in KNOWN_GUIDE_ERRORS and label != KNOWN_GUIDE_ERRORS[key]:
+            stats["skipped: known guide error"] += 1
+            continue
         if key in rows:
             # The guide repeats some rows, and lists one column under both its old and new name.
             if rows[key][3] != label:

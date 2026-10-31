@@ -1,0 +1,84 @@
+# Continuous integration and delivery. On every push and pull request:
+#   tests      the Python test suite
+#   pipeline   the whole database and dbt build on a small sample of STATS19 (ci/sample/), in a
+#              throwaway Postgres; checks against DfT's national totals need every row, so the
+#              tests tagged full_data are left out
+#   image      builds the pipeline's Docker image and checks it starts; on main, publishes it to
+#              GitHub's container registry as ghcr.io/momerf988/speed-constraint-gb
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    name: Python tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.2"
+          python-version: "3.14"
+      - run: uv sync --frozen
+      - run: uv run pytest -q
+
+  pipeline:
+    name: Database and dbt on a sample
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17.11
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: speed_gb
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: speed_gb
+      DATABASE_URL: host=localhost port=5432 user=postgres password=postgres dbname=speed_gb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.2"
+          python-version: "3.14"
+      - run: uv sync --frozen
+      - name: Use the committed sample as the raw data
+        run: mkdir -p data/raw && cp ci/sample/* data/raw/
+      - name: Build the raw database
+        run: make db
+      - name: Build and test every dbt layer, except checks that need the full data
+        run: cd dbt && uv run dbt build --exclude tag:full_data
+      - name: Export the marts to Parquet
+        run: make export
+
+  image:
+    name: Docker image
+    needs: [tests, pipeline]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/momerf988/speed-constraint-gb
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image
+        run: docker build --tag "$IMAGE:${{ github.sha }}" --tag "$IMAGE:latest" .
+      - name: Check the image starts and its tools work
+        run: docker run --rm "$IMAGE:${{ github.sha }}" sh -c "uv run python -c 'import model.run, model.appraisal, model.severity' && uv run dbt --version && psql --version"
+      - name: Publish the image (main only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
+          docker push "$IMAGE:${{ github.sha }}"
+          docker push "$IMAGE:latest"

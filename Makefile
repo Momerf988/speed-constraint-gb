@@ -1,4 +1,4 @@
-.PHONY: setup ingest db transform docs export rq1 test speeds rq2 values rq3 wales tune severity holdout
+.PHONY: setup ingest db transform docs export rq1 test speeds rq2 values rq3 wales tune severity holdout sample
 
 # Create the Python environment from pyproject.toml.
 setup:
@@ -71,3 +71,7 @@ severity:
 # Phase 8: test the tuned severity model on 2025, a year it never saw, written to results/ and figures/.
 holdout:
 	uv run python -m analysis.severity_holdout
+
+# Phase 9: remake the small STATS19 sample in ci/sample/ that CI builds the pipeline on.
+sample:
+	uv run python ci/make_sample.py

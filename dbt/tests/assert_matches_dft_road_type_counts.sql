@@ -1,6 +1,9 @@
 -- The road categories must reproduce DfT's published counts by road type and class
 -- (RAS0302, 2025). This proves the urban/rural x A-road/minor/motorway mapping in
 -- int_collision_enriched is DfT's own.
+-- Tagged full_data: it needs every row, so CI (which builds a sample) leaves it out.
+
+{{ config(tags=['full_data']) }}
 
 with ours as (
     select year, traffic_road_category, 'killed' as measure, sum(killed)::numeric as our_value

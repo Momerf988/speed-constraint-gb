@@ -2,6 +2,9 @@
 -- This is the project's noise-floor check: if the pipeline cannot reproduce the
 -- official numbers, nothing built on it can be trusted.
 -- A singular test passes when it returns no rows.
+-- Tagged full_data: it needs every row, so CI (which builds a sample) leaves it out.
+
+{{ config(tags=['full_data']) }}
 
 with ours as (
     select collision_year as year, 'casualties' as measure, count(*)::numeric as our_value

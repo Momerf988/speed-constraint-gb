@@ -1,5 +1,7 @@
 # Binding the Limit
 
+[![CI](https://github.com/Momerf988/speed-constraint-gb/actions/workflows/ci.yml/badge.svg)](https://github.com/Momerf988/speed-constraint-gb/actions/workflows/ci.yml)
+
 Would capping how fast cars can go save enough lives in Great Britain to be worth the extra
 travel time? And would it beat simply holding every car to each road's posted limit?
 
@@ -7,7 +9,7 @@ This project answers that with the government's own data and appraisal values: e
 police-reported injury collision since 1979, DfT traffic and speed statistics, and DfT's
 official values for a prevented casualty and for an hour of travel time.
 
-**Status:** Phase 8 of 9 complete. All 37.5 million STATS19 rows (1979–2025) are loaded into
+**Status:** Phases 1–8 complete; Phase 9 under way (CI/CD done, Azure deployment next). All 37.5 million STATS19 rows (1979–2025) are loaded into
 PostgreSQL and modelled with dbt into a tested star schema, joined to DfT traffic and
 free-flow speed statistics. A casualty model in Python estimates the deaths and injuries each
 policy would prevent, with Monte Carlo ranges and an explicit label wherever a scenario goes
@@ -33,6 +35,27 @@ DfT files → PostgreSQL (raw) → dbt: staging → intermediate → star schema
 values, row conservation from raw to facts and into the model's inputs, the rules of DfT's
 severity adjustment, and reconciliation against DfT's published casualty, traffic and speed
 figures. 71 pytest tests cover the models, the appraisal and the causal and machine-learning code.
+
+## Continuous integration and delivery
+
+Every push runs three jobs on GitHub Actions (`.github/workflows/ci.yml`):
+
+- **Python tests:** all 71; the one that re-reads DfT's raw appraisal spreadsheet is skipped,
+  because CI does not hold it.
+- **The whole pipeline on a sample:** raw load, keys, code lookups, traffic, speeds, every dbt
+  model and 78 of the 80 data tests, then the Parquet export, in a throwaway Postgres. The
+  sample (`ci/sample/`, 2.7 MB, made by `ci/make_sample.py`) is 1 in 250 collisions from 2015
+  onwards, with all their vehicles and casualties, copied byte for byte. The two tests that
+  compare the build with DfT's national totals need every row; they are tagged `full_data` and
+  run only on the full build.
+- **A Docker image of the pipeline**, checked to start; pushes to `main` publish it as
+  `ghcr.io/momerf988/speed-constraint-gb`. It runs against any Postgres given through the
+  `PG*` and `DATABASE_URL` environment variables, which is what the planned Azure deployment
+  will use.
+
+Building from scratch for CI exposed one real problem: DfT's 2025 data guide gives casualty
+type 23 two labels. `db/lookups.py` keeps the one that matches vehicle type 23 (electric
+motorcycle), records why, and still stops on any other conflict.
 
 ## RQ1: where harm happens, per kilometre driven
 
@@ -186,7 +209,23 @@ make wales      # Wales 32 km/h default: difference-in-differences against Engla
 make tune       # tune the severity model on 2021-2024 (about 10 minutes)
 make severity   # severity model: XGBoost with SHAP, cross-validated by collision
 make holdout    # severity model tested on 2025, a year it never saw, overall and by group
+make sample     # remake the small STATS19 sample in ci/sample/ that CI runs on
 ```
+
+Or run the pipeline from its Docker image against any Postgres:
+
+```bash
+docker run --rm -e PGHOST=host.docker.internal -e PGUSER="$USER" -e PGDATABASE=speed_gb \
+    -e DATABASE_URL="host=host.docker.internal user=$USER dbname=speed_gb" \
+    ghcr.io/momerf988/speed-constraint-gb
+```
+
+## Data and licence
+
+STATS19, the traffic and speed tables, RAS4001 and the TAG data book are published by the
+Department for Transport. Contains public sector information licensed under the
+[Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/).
+The CI sample in `ci/sample/` is a subset of those files, unchanged.
 
 ## Deliberately not used
 
