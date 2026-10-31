@@ -35,7 +35,9 @@ SOURCES = {
     "Severity adjustment guidance": f"{GOVUK}/691c644021ef5aaa6543eef0/dft-road-casualty-statistics-severity-adjustment-figure-guidance.docx",
     "DfT TRA0202 traffic, billion vehicle-km by road class, 1993 onwards": f"{GOVUK}/6a0b7cb4c510c3913d8267cc/tra0202-km-by-road-class.ods",
     "DfT SPE0102 free-flow vehicle speeds by road type and vehicle type, 2018 onwards": f"{GOVUK}/685a8814db207fc18744d5ed/spe0102.ods",
-
+    "DfT TRA0204 traffic, billion vehicle-km by vehicle type and road class, 1993 onwards": f"{GOVUK}/6a0b7ce1f7c2e79c33db9144/tra0204-km-by-vehicle-and-road-type.ods",
+    "DfT RAS4001 average and total value of prevention of collisions and casualties": f"{GOVUK}/6ab260708cb3c0580e500f9a/ras4001.ods",
+    "DfT TAG data book v2.03 (May 2026), appraisal values": f"{GOVUK}/6a576e102f6185941a9a6569/tag-data-book-v2-03.xlsm",
 }
 
 CHUNK = 1 << 20  # 1 MiB

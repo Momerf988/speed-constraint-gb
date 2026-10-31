@@ -47,5 +47,26 @@
     "bytes": 85504,
     "sha256": "ed33bcea35b7a0b5d84209d97d6d96ed7be6b43c063d14fb8e393790319c8b02",
     "retrieved_utc": "2026-10-30T14:04:48+00:00"
+  },
+  "DfT TRA0204 traffic, billion vehicle-km by vehicle type and road class, 1993 onwards": {
+    "url": "https://assets.publishing.service.gov.uk/media/6a0b7ce1f7c2e79c33db9144/tra0204-km-by-vehicle-and-road-type.ods",
+    "file": "data/raw/tra0204-km-by-vehicle-and-road-type.ods",
+    "bytes": 54355,
+    "sha256": "6c689eeed73ba9a5b97f353724f69eb0e0dcc743dd049997163486e51420a697",
+    "retrieved_utc": "2026-10-31T00:34:27+00:00"
+  },
+  "DfT RAS4001 average and total value of prevention of collisions and casualties": {
+    "url": "https://assets.publishing.service.gov.uk/media/6ab260708cb3c0580e500f9a/ras4001.ods",
+    "file": "data/raw/ras4001.ods",
+    "bytes": 54159,
+    "sha256": "4bb0da8ff7f24bda7bd8ef6e31fafb0b5278ed88a19ea1e700d3a740c5e4cf67",
+    "retrieved_utc": "2026-10-31T00:34:27+00:00"
+  },
+  "DfT TAG data book v2.03 (May 2026), appraisal values": {
+    "url": "https://assets.publishing.service.gov.uk/media/6a576e102f6185941a9a6569/tag-data-book-v2-03.xlsm",
+    "file": "data/raw/tag-data-book-v2-03.xlsm",
+    "bytes": 6025933,
+    "sha256": "d5a24066dd11bff9effb173e9a1d3fba0fbc174831b5a29a7c84141e75556108",
+    "retrieved_utc": "2026-10-31T00:34:27+00:00"
   }
 }

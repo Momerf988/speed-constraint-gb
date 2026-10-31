@@ -1,4 +1,4 @@
-.PHONY: setup ingest db transform docs export rq1 test speeds rq2
+.PHONY: setup ingest db transform docs export rq1 test speeds rq2 values rq3
 
 # Create the Python environment from pyproject.toml.
 setup:
@@ -8,9 +8,9 @@ setup:
 ingest:
 	uv run python ingest/download.py
 
-# Phase 2 and 4: rebuild the raw database from the downloaded files.
+# Phase 2, 4, 6 and 7: rebuild the raw database from the downloaded files.
 # Drops and recreates the raw schema, loads the CSVs, adds keys and code lookups,
-# then loads DfT traffic (TRA0202) and free-flow speeds (SPE0102).
+# then loads DfT traffic (TRA0202), free-flow speeds (SPE0102) and traffic by vehicle type (TRA0204).
 db:
 	psql -d speed_gb -v ON_ERROR_STOP=1 -f db/schema.sql
 	uv run python db/load.py
@@ -18,6 +18,7 @@ db:
 	uv run python db/lookups.py
 	uv run python db/load_traffic.py
 	uv run python db/load_speed.py
+	uv run python db/load_traffic_vehicle.py
 
 # Phase 3: build the staging, intermediate and mart layers with dbt, and run every test.
 transform:
@@ -46,3 +47,11 @@ speeds:
 # Phase 6: RQ2 and RQ4, deaths and injuries prevented by each policy, written to results/ and figures/.
 rq2:
 	uv run python -m analysis.rq2_rq4
+
+# Phase 7: extract DfT's appraisal values (TAG data book, RAS4001) into model/parameters/appraisal_values.csv.
+values:
+	uv run python ingest/extract_appraisal_values.py
+
+# Phase 7: RQ3 cost-benefit appraisal, written to results/ and figures/.
+rq3:
+	uv run python -m analysis.rq3

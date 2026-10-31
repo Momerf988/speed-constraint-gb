@@ -36,6 +36,8 @@ TABLES = [
     "agg_rates_year_road_category",
     "agg_speed_bands_cars",
     "agg_casualties_segment_year",
+    "agg_traffic_segment",
+    "agg_collisions_per_casualty",
 ]
 
 

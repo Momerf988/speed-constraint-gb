@@ -149,3 +149,31 @@ models:
                 values: ['32 km/h roads', '48 km/h roads', '97 km/h single carriageways', '113 km/h motorways', 'not modelled']
       - name: casualties
         data_tests: [not_null]
+
+  - name: agg_traffic_segment
+    description: >
+      Car and van traffic (billion vehicle-km) per year on each modelled road type, from 2010.
+      DfT publishes traffic only by road class, so each class's traffic is split across road types
+      in proportion to its casualties. The exposure for the travel-time cost in the appraisal.
+    columns:
+      - name: segment
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['32 km/h roads', '48 km/h roads', '97 km/h single carriageways', '113 km/h motorways', 'not modelled']
+      - name: car_billion_vehicle_km
+        data_tests: [not_null]
+      - name: van_billion_vehicle_km
+        data_tests: [not_null]
+
+  - name: agg_collisions_per_casualty
+    description: Collisions per casualty by severity and year, from 2010, so per-collision costs (police, insurance, property damage) can be attached to casualties prevented.
+    columns:
+      - name: severity
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Fatal', 'Serious', 'Slight']
+      - name: collisions_per_casualty
+        data_tests: [not_null]
+

@@ -7,11 +7,12 @@ This project answers that with the government's own data and appraisal values: e
 police-reported injury collision since 1979, DfT traffic and speed statistics, and DfT's
 official values for a prevented casualty and for an hour of travel time.
 
-**Status:** Phase 6 of 9 complete. All 37.5 million STATS19 rows (1979–2025) are loaded into
+**Status:** Phase 7 of 9 complete. All 37.5 million STATS19 rows (1979–2025) are loaded into
 PostgreSQL and modelled with dbt into a tested star schema, joined to DfT traffic and
 free-flow speed statistics. A casualty model in Python estimates the deaths and injuries each
 policy would prevent, with Monte Carlo ranges and an explicit label wherever a scenario goes
-beyond the evidence. Next: the travel time each policy costs, and whether it pays (Phase 7).
+beyond the evidence, and an appraisal prices them against the travel time each policy costs,
+using DfT's TAG values.
 
 ## Pipeline
 
@@ -21,16 +22,16 @@ DfT files → PostgreSQL (raw) → dbt: staging → intermediate → star schema
 
 | Layer | What it holds |
 |---|---|
-| `raw` | The three STATS19 tables exactly as published, with primary and foreign keys; DfT traffic (TRA0202) and free-flow speeds (SPE0102) |
+| `raw` | The three STATS19 tables exactly as published, with primary and foreign keys; DfT traffic (TRA0202, TRA0204) and free-flow speeds (SPE0102) |
 | `staging` | Clear names, `-1` "unknown" codes turned into nulls (views) |
 | `intermediate` | km/h speed limits, DfT road categories, keys, reported and adjusted severity (views) |
-| `marts` | Star schema: `fct_casualty`, `fct_collision`, `dim_date`, `dim_road`, `dim_police_force`, `dim_casualty_profile`, plus aggregates for rates, speed bands and the casualty model's baseline (tables) |
-| `model/` | Python: speed distributions, policies, speed-risk curves and the Monte Carlo, with every parameter traced to its source |
+| `marts` | Star schema: `fct_casualty`, `fct_collision`, `dim_date`, `dim_road`, `dim_police_force`, `dim_casualty_profile`, plus aggregates for rates, speed bands, the casualty baseline, traffic per road type and collisions per casualty (tables) |
+| `model/` | Python: speed distributions, policies, speed-risk curves, Monte Carlo and appraisal, with every parameter and £ value traced to its source cell |
 
-54 data tests run on every build: key uniqueness, fact-to-dimension relationships, allowed
-values, row conservation from raw to facts and into the model's baseline, the rules of DfT's
-severity adjustment, and reconciliation against DfT's published casualty and speed figures.
-41 pytest tests cover the model.
+69 data tests run on every build: key uniqueness, fact-to-dimension relationships, allowed
+values, row conservation from raw to facts and into the model's inputs, the rules of DfT's
+severity adjustment, and reconciliation against DfT's published casualty, traffic and speed
+figures. 53 pytest tests cover the model and the appraisal.
 
 ## RQ1: where harm happens, per kilometre driven
 
@@ -76,6 +77,38 @@ rollout path; and 29% of deaths are on road types without DfT speed data. "At le
 results where the urban curve, fitted only on cars faster than the traffic mean, cuts the
 estimate short.
 
+## RQ3: does each policy pay for itself?
+
+![Benefit-cost ratio of caps below the limit](figures/rq3_benefit_cost_ratio.png)
+
+Casualties prevented are valued with TAG data book v2.03 (£2.65m per death, £295,069 per
+serious and £22,668 per slight injury, plus police, insurance and damage costs per
+collision), and travel time at TAG's £15.65 per car-hour and £28.76 per van-hour, all in 2023
+prices. Following DfT practice, time a driver gained by breaking the limit is not counted.
+Figures are £ a year beyond business-as-usual ISA, with the 5th–95th percentile in brackets.
+
+- **Holding cars to the posted limit costs no lawful time**, so it pays wherever it prevents
+  casualties: at least £1.23bn a year on the four road types, £756m (£329m–£1.4bn) of it on
+  48 km/h roads. Even if time gained by speeding were counted, it would still pay on 48 and
+  97 km/h roads; on 32 km/h roads and motorways it would pay only if under 22% and 17% of
+  traffic flowed freely.
+- **An 80 km/h cap on 97 km/h single carriageways does not pay on central assumptions:**
+  £408m of casualties prevented against £718m of lawful time, a benefit-cost ratio of 0.57
+  (0.37–0.84). It pays only if under 40% of the traffic on those roads flows freely, or if
+  the Exponential model is right, or if injuries never reported to the police are counted.
+- **Lower caps, and any cap on motorways, fail even on the most favourable model.** A 60 km/h
+  cap on 97 km/h roads would cost £4.4bn of lawful time a year for £0.5–2.1bn of casualties
+  prevented; motorway caps return at most 23p per £1 of time lost.
+- **Against the 2035 target** of 65% fewer KSI than 2022–2024 (18,801 fewer a year), the
+  mandated ISA in every car would deliver at least 14%, and posted-limit compliance at least a
+  further 13% (7–24%).
+
+Limits: no published figure gives the share of traffic that flows freely (70% is assumed on
+97 km/h roads and motorways, 40% on urban roads), so the break-even share is reported; DfT
+publishes traffic by road class, not speed limit, so it is split by casualty share, which
+overstates traffic on single carriageways; vans are assumed to drive like cars; fuel,
+emissions and vehicle operating costs are left out.
+
 ## Run it
 
 Requires Python 3.12+, [uv](https://docs.astral.sh/uv/) and PostgreSQL 17 with a database
@@ -85,13 +118,15 @@ called `speed_gb`.
 make setup      # create the Python environment
 make ingest     # download the raw data (about 4.3 GB) and write ingest/manifest.json
 make db         # build the raw database: schema, bulk load, keys, code lookups, traffic, speeds
-make transform  # build the dbt layers and run all 54 data tests
+make transform  # build the dbt layers and run all 69 data tests
 make export     # export the marts to Parquet in data/marts/
 make docs       # browse the documentation and lineage graph
 make rq1        # RQ1 rates and charts, written to figures/
-make test       # run the 41 model tests
+make values     # extract DfT's appraisal values into model/parameters/appraisal_values.csv
+make test       # run the 53 model tests
 make speeds     # speed distributions from DfT's bands, checked against DfT's own figures
 make rq2        # RQ2 and RQ4: casualties prevented by each policy, with Monte Carlo ranges
+make rq3        # RQ3: benefit, time cost and benefit-cost ratio of each policy
 ```
 
 ## Deliberately not used

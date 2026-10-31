@@ -25,3 +25,21 @@ models:
                 quote: false
       - name: band_lower_mph
         data_tests: [not_null]
+  - name: stg_traffic_vehicle_road_class
+    description: DfT traffic by vehicle type (TRA0204), one row per year, road category and vehicle type. A roads' trunk and principal rows are added together; DfT's total rows are dropped.
+    columns:
+      - name: year
+        data_tests: [not_null]
+      - name: traffic_road_category
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Motorway', 'Urban A road', 'Urban minor road', 'Rural A road', 'Rural minor road']
+      - name: vehicle_type
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Cars and Taxis', 'Light Commercial Vehicles', 'Heavy Goods Vehicles', 'Motorcycles', 'Buses and Coaches']
+      - name: billion_vehicle_km
+        data_tests: [not_null]

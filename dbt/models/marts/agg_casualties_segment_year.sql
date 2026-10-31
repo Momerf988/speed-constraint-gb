@@ -1,10 +1,8 @@
 -- Casualties per year on the four road types that have DfT free-flow speed distributions
--- (the "modelled segments"), and how many were in collisions involving a car, taxi or van:
--- the vehicles a speed limiter acts on. Every other road is grouped as "not modelled", so the
--- share of harm the casualty model covers stays visible.
---   32 km/h and 48 km/h roads       all roads with that limit
---   97 km/h single carriageways     DfT's "national speed limit single carriageway"
---   113 km/h motorways              motorways only; 113 km/h dual carriageways have no speed data
+-- (the "modelled segments", defined once in macros/modelled_segment.sql), and how many were
+-- in collisions involving a car, taxi or van: the vehicles a speed limiter acts on. Every
+-- other road is grouped as "not modelled", so the share of harm the casualty model covers
+-- stays visible.
 
 with car_van_collisions as (
     select distinct collision_index
@@ -16,13 +14,7 @@ with car_van_collisions as (
 casualties as (
     select
         f.collision_year                                        as year,
-        case
-            when r.speed_limit_kmh = 32 then '32 km/h roads'
-            when r.speed_limit_kmh = 48 then '48 km/h roads'
-            when r.speed_limit_kmh = 97 and r.road_type = 'Single carriageway' then '97 km/h single carriageways'
-            when r.speed_limit_kmh = 113 and r.traffic_road_category = 'Motorway' then '113 km/h motorways'
-            else 'not modelled'
-        end                                                     as segment,
+        {{ modelled_segment('r') }}                             as segment,
         f.fatal,
         f.ksi_adjusted,
         v.collision_index is not null                           as car_van_involved

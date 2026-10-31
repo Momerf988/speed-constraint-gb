@@ -17,3 +17,5 @@ sources:
         description: DfT table TRA0202, motor vehicle traffic in billion vehicle-km by road class, Great Britain, 1993 onwards. Loaded unchanged by db/load_traffic.py.
       - name: speed_spe0102
         description: DfT table SPE0102, free-flow vehicle speeds by road type and vehicle type, Great Britain, 2018 onwards. One row per sheet row, values as published text. Loaded by db/load_speed.py.
+      - name: traffic_tra0204
+        description: DfT table TRA0204, traffic in billion vehicle-km by vehicle type and road class, Great Britain, 1993 onwards. One row per published row and year, DfT's total rows included. Loaded by db/load_traffic_vehicle.py.

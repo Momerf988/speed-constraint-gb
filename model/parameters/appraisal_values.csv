@@ -1,0 +1,34 @@
+value_id,value,unit,source,location,price_year
+casualty_fatal,2652796.1910228445,£ per casualty,TAG data book May 2026 v2.03,A4.1.1!G27,2023
+casualty_serious,295069.04334242875,£ per casualty,TAG data book May 2026 v2.03,A4.1.1!G28,2023
+casualty_slight,22667.773674022843,£ per casualty,TAG data book May 2026 v2.03,A4.1.1!G29,2023
+collision_police_fatal,26560.260441082595,£ per collision,TAG data book May 2026 v2.03,A4.1.3!G27,2023
+collision_police_serious,3093.605811899847,£ per collision,TAG data book May 2026 v2.03,A4.1.3!G28,2023
+collision_police_slight,798.6647792517265,£ per collision,TAG data book May 2026 v2.03,A4.1.3!G29,2023
+collision_damage_fatal,16305.212261490562,£ per collision,TAG data book May 2026 v2.03,A4.1.3!H27,2023
+collision_damage_serious,7380.740646976582,£ per collision,TAG data book May 2026 v2.03,A4.1.3!H28,2023
+collision_damage_slight,4348.604618999052,£ per collision,TAG data book May 2026 v2.03,A4.1.3!H29,2023
+collision_insurance_fatal,448.2516836079296,£ per collision,TAG data book May 2026 v2.03,A4.1.3!I27,2023
+collision_insurance_serious,278.8741390385211,£ per collision,TAG data book May 2026 v2.03,A4.1.3!I28,2023
+collision_insurance_slight,169.37754456940854,£ per collision,TAG data book May 2026 v2.03,A4.1.3!I29,2023
+vot_car_work,27.56938236506803,£ per person-hour,TAG data book May 2026 v2.03,A1.3.1!F28,2023
+vot_van_freight,27.08000151749094,£ per person-hour,TAG data book May 2026 v2.03,A1.3.1!F30,2023
+vot_van_services,24.664189396631745,£ per person-hour,TAG data book May 2026 v2.03,A1.3.1!F31,2023
+vot_commuting,15.512609932394097,£ per person-hour,TAG data book May 2026 v2.03,A1.3.1!F47,2023
+vot_other,7.080420708452627,£ per person-hour,TAG data book May 2026 v2.03,A1.3.1!F48,2023
+car_occupancy_work,1.11517594766497,people per vehicle-km,TAG data book May 2026 v2.03,A1.3.3!J27,
+car_occupancy_commuting,1.07012895943691,people per vehicle-km,TAG data book May 2026 v2.03,A1.3.3!J28,
+car_occupancy_other,1.86614666522643,people per vehicle-km,TAG data book May 2026 v2.03,A1.3.3!J29,
+van_occupancy_work,1.2,people per vehicle-km,TAG data book May 2026 v2.03,A1.3.3!J40,
+van_occupancy_nonwork,1.59,people per vehicle-km,TAG data book May 2026 v2.03,A1.3.3!J41,
+car_km_share_work,0.0954997570523411,share of vehicle-km,TAG data book May 2026 v2.03,A1.3.4!J27,
+car_km_share_commuting,0.225798218492647,share of vehicle-km,TAG data book May 2026 v2.03,A1.3.4!J28,
+car_km_share_other,0.678702024455011,share of vehicle-km,TAG data book May 2026 v2.03,A1.3.4!J29,
+van_km_share_freight,0.243571984286221,share of vehicle-km,TAG data book May 2026 v2.03,A1.3.4!J30,
+van_km_share_services,0.611397124069421,share of vehicle-km,TAG data book May 2026 v2.03,A1.3.4!J31,
+van_km_share_commuting,0.08333620789813499,share of vehicle-km,TAG data book May 2026 v2.03,A1.3.4!J32,
+van_km_share_other,0.0616946837462228,share of vehicle-km,TAG data book May 2026 v2.03,A1.3.4!J33,
+previous_casualty_fatal,2411658.874962044,£ per casualty,"RAS4001 (2026), based on the September 2024 TAG data book","Average_value: 2023, Fatal",2023
+previous_casualty_serious,271002.92295809614,£ per casualty,"RAS4001 (2026), based on the September 2024 TAG data book","Average_value: 2023, Serious",2023
+previous_casualty_slight,20891.581693569402,£ per casualty,"RAS4001 (2026), based on the September 2024 TAG data book","Average_value: 2023, Slight",2023
+unreported_to_reported_nonfatal,2.9089761161694834,ratio,RAS4001 (2026),"Total_value: 2025, unreported non-fatal / (serious + slight)",
