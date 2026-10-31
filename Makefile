@@ -1,4 +1,4 @@
-.PHONY: setup ingest db transform docs export rq1 test speeds rq2 values rq3 wales severity
+.PHONY: setup ingest db transform docs export rq1 test speeds rq2 values rq3 wales tune severity holdout
 
 # Create the Python environment from pyproject.toml.
 setup:
@@ -60,6 +60,14 @@ rq3:
 wales:
 	uv run python -m analysis.wales
 
-# Phase 8: severity model (XGBoost, SHAP), written to results/ and figures/.
+# Phase 8: tune the severity model on 2021-2024 (about 10 minutes), written to model/parameters/ and results/.
+tune:
+	uv run python -m analysis.severity_tuning
+
+# Phase 8: severity model (XGBoost with the tuned settings, SHAP), written to results/ and figures/.
 severity:
 	uv run python -m analysis.severity
+
+# Phase 8: test the tuned severity model on 2025, a year it never saw, written to results/ and figures/.
+holdout:
+	uv run python -m analysis.severity_holdout

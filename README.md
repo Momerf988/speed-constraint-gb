@@ -32,7 +32,7 @@ DfT files → PostgreSQL (raw) → dbt: staging → intermediate → star schema
 80 data tests run on every build: key uniqueness, fact-to-dimension relationships, allowed
 values, row conservation from raw to facts and into the model's inputs, the rules of DfT's
 severity adjustment, and reconciliation against DfT's published casualty, traffic and speed
-figures. 65 pytest tests cover the models, the appraisal and the causal and machine-learning code.
+figures. 71 pytest tests cover the models, the appraisal and the causal and machine-learning code.
 
 ## RQ1: where harm happens, per kilometre driven
 
@@ -143,20 +143,26 @@ zero; there is no traffic count by force and month.
 An XGBoost model learns each casualty's adjusted probability of being killed or seriously
 injured from 27 fields recorded at the scene (2021–2025, 652,821 casualties). Fields that follow
 from the outcome or reflect police recording (number of casualties, police force,
-contributory factors) are left out, and cross-validation keeps each collision's casualties
-together.
+contributory factors) are left out, and every check keeps each collision's casualties together.
+Its settings were tuned by a random search with early stopping, on 2021–2024 only.
 
-- Out of fold, it reaches an average precision of 0.457, against 0.218 with no skill and 0.426
-  for logistic regression on the same fields (ROC AUC 0.745), and its probabilities are
-  calibrated to within 0.4 percentage points.
+- Out of fold, it reaches an average precision of 0.457 (± 0.003 across folds), against 0.218
+  with no skill and 0.426 for logistic regression on the same fields, and beat logistic
+  regression in all five folds. Its probabilities are calibrated to within 0.5 percentage points.
+- On 2025, a year it never saw, it keeps its edge: average precision 0.462 (95% interval
+  0.455–0.467) against 0.434 for logistic regression, though ROC AUC slips from 0.745 to 0.731.
+  Tuning added only 0.003 over the default settings: the gain comes from the type of model.
+- It beats no skill in every group, by 1.5 to 2.2 times, and is weakest for cyclists (ROC AUC
+  0.65).
 - Who was hurt matters most (pedestrian, rider or occupant), then what the vehicle was doing,
   where it was hit and the casualty's age; the speed limit comes fifth.
-- Holding the other fields, the odds of KSI rise steadily with the limit: 0.92 at 32 km/h, 1.22
-  at 64, 1.38 at 80 and 1.50 at 97 and 113 km/h, against 48 km/h roads. Raw figures hide this on
-  motorways (0.95), where crashes involve different people and impacts.
+- Holding the other fields, the odds of KSI rise steadily with the limit: 0.93 at 32 km/h, 1.20
+  at 64, 1.35 at 80, 1.47 at 97 and 1.43 at 113 km/h, against 48 km/h roads. Raw figures hide
+  this on motorways (0.95), where crashes involve different people and impacts.
 
 Scope: this shows which crashes end up more severe. It does not estimate what a cap would do,
-because a cap also changes which crashes happen at all.
+because a cap also changes which crashes happen at all. SHAP values explain the model, not the
+world: related fields, such as casualty type and vehicle type, share credit between them.
 
 ## Run it
 
@@ -172,12 +178,14 @@ make export     # export the marts to Parquet in data/marts/
 make docs       # browse the documentation and lineage graph
 make rq1        # RQ1 rates and charts, written to figures/
 make values     # extract DfT's appraisal values into model/parameters/appraisal_values.csv
-make test       # run the 65 model tests
+make test       # run the 71 model tests
 make speeds     # speed distributions from DfT's bands, checked against DfT's own figures
 make rq2        # RQ2 and RQ4: casualties prevented by each policy, with Monte Carlo ranges
 make rq3        # RQ3: benefit, time cost and benefit-cost ratio of each policy
 make wales      # Wales 32 km/h default: difference-in-differences against England
+make tune       # tune the severity model on 2021-2024 (about 10 minutes)
 make severity   # severity model: XGBoost with SHAP, cross-validated by collision
+make holdout    # severity model tested on 2025, a year it never saw, overall and by group
 ```
 
 ## Deliberately not used

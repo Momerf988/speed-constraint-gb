@@ -1,0 +1,12 @@
+{
+  "selected_by": "lowest mean log loss, 3-fold cross-validation grouped by collision, 2021-2024 only; 20 random candidates, seed 20261101; each fit stopped after 50 trees without improvement (at most 2000)",
+  "params": {
+    "max_depth": 8,
+    "learning_rate": 0.0547,
+    "min_child_weight": 50,
+    "subsample": 0.6494,
+    "colsample_bytree": 0.6459,
+    "reg_lambda": 0.1238,
+    "n_estimators": 241
+  }
+}

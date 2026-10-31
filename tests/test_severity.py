@@ -1,12 +1,15 @@
-"""Tests for the severity model's data preparation, grouping, scores and SHAP values, on made-up data."""
+"""Tests for the severity model: data preparation, grouping, scores, tuning, bootstrap and SHAP, on made-up data."""
+
+import json
 
 import numpy as np
 import pandas as pd
 import pytest
 from sklearn.metrics import average_precision_score
 
-from model.severity import (CATEGORICAL, FEATURES, LEFT_OUT, NUMERIC, expand, fit, folds, logistic_model, predict,
-                            prepare, scores, shap_values, xgboost_model)
+from model.severity import (CATEGORICAL, DEFAULT_PARAMS, FEATURES, LEFT_OUT, NUMERIC, bootstrap, by_group, expand,
+                            fit, folds, logistic_model, predict, prepare, sample_params, scores, shap_values, tune,
+                            tuned_params, xgboost_model)
 
 
 def made_up_table(n: int = 600, seed: int = 1) -> pd.DataFrame:
@@ -53,6 +56,13 @@ def test_a_soft_label_counts_as_partly_ksi_and_partly_not():
     assert list(y) == [1, 0] and list(w) == [0.25, 0.75] and list(p) == [0.5, 0.5]
 
 
+def test_a_bootstrap_weight_of_two_counts_a_casualty_twice():
+    label, prediction = pd.Series([0.9, 0.1, 0.6, 0.3]), np.array([0.8, 0.3, 0.4, 0.5])
+    weighted = scores(label, prediction, weight=np.array([2, 1, 1, 1]))
+    duplicated = scores(pd.concat([label, label.iloc[:1]]), np.append(prediction, prediction[0]))
+    assert weighted == pytest.approx(duplicated)
+
+
 def test_both_models_fit_probability_labels_and_learn_the_signal():
     features, label, _ = prepare(made_up_table(2000))
     for model in (xgboost_model(), logistic_model(features)):
@@ -64,6 +74,45 @@ def test_both_models_fit_probability_labels_and_learn_the_signal():
 def test_shap_values_add_up_to_each_prediction():
     features, label, _ = prepare(made_up_table())
     model = fit(xgboost_model(), features, label)
-    contributions = shap_values(model, features)
-    margin = contributions.sum(axis=1).to_numpy()
+    margin = shap_values(model, features).sum(axis=1).to_numpy()
     assert 1 / (1 + np.exp(-margin)) == pytest.approx(predict(model, features), abs=1e-5)
+
+
+def test_candidates_stay_in_the_search_space_and_repeat_with_the_seed():
+    first = [sample_params(np.random.default_rng(5)) for _ in range(3)]
+    assert first == [sample_params(np.random.default_rng(5)) for _ in range(3)]
+    for candidate in first:
+        assert candidate["max_depth"] in (4, 6, 8, 10) and 0.03 <= candidate["learning_rate"] <= 0.2
+        assert 0.6 <= candidate["subsample"] <= 1 and 0.5 <= candidate["colsample_bytree"] <= 1
+
+
+def test_tuning_scores_every_candidate_and_stops_fits_early():
+    features, label, groups = prepare(made_up_table(800))
+    trials = tune(features, label, groups, trials=3, n_folds=2, max_trees=60)
+    assert len(trials) == 3
+    assert trials["trees"].between(1, 60).all()
+    assert trials["log_loss"].gt(0).all()
+
+
+def test_tuned_settings_are_read_on_top_of_the_defaults(tmp_path):
+    path = tmp_path / "tuned.json"
+    path.write_text(json.dumps({"params": {"max_depth": 8, "n_estimators": 700}}))
+    params = tuned_params(path)
+    assert params["max_depth"] == 8 and params["n_estimators"] == 700
+    assert params["objective"] == DEFAULT_PARAMS["objective"]
+    with pytest.raises(FileNotFoundError):
+        tuned_params(tmp_path / "missing.json")
+
+
+def test_bootstrap_gives_one_row_per_draw_and_model():
+    label, groups = pd.Series([0.9, 0.1, 0.6, 0.3, 0.5, 0.2]), pd.Series(["a", "a", "b", "b", "c", "c"])
+    draws = bootstrap(label, {"m1": np.full(6, 0.4), "m2": label.to_numpy()}, groups, draws=4, seed=1)
+    assert len(draws) == 8 and set(draws["model"]) == {"m1", "m2"}
+
+
+def test_lift_is_average_precision_over_the_groups_ksi_share():
+    label = pd.Series([0.9, 0.1, 0.6, 0.3, 0.8, 0.2])
+    prediction = np.array([0.8, 0.2, 0.5, 0.4, 0.7, 0.1])
+    table = by_group(label, prediction, pd.Series(["x", "x", "x", "y", "y", "y"]))
+    for _, r in table.iterrows():
+        assert r["lift"] == pytest.approx(r["average_precision"] / r["ksi_share"])

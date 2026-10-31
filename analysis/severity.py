@@ -1,10 +1,12 @@
 """Phase 8, part B: what makes a road casualty killed or seriously injured, once a crash has happened.
 
-Trains XGBoost on every casualty from 2021 to 2025 (data/marts/ml_casualty_severity), judged by
-5-fold cross-validation grouped by collision against two benchmarks: no skill (everyone gets the
-average KSI probability) and logistic regression on the same fields. Then fits one model on all
-the data and explains it with SHAP values. Writes:
-    results/severity_scores.parquet       scores of each model, out of fold
+Trains XGBoost, with the settings tuned by analysis/severity_tuning.py, on every casualty from
+2021 to 2025 (data/marts/ml_casualty_severity), judged by 5-fold cross-validation grouped by
+collision against two benchmarks: no skill (everyone gets the average KSI probability) and
+logistic regression on the same fields. The spread across folds shows how stable each score is.
+Then fits one model on all the data and explains it with SHAP values. The test on a later year
+is analysis/severity_holdout.py. Writes:
+    results/severity_scores.parquet       scores of each model in each fold
     results/severity_shap.parquet         mean absolute SHAP value per field
     results/severity_xgboost.json         the final model
     figures/severity_precision_recall.png
@@ -29,7 +31,7 @@ from sklearn.metrics import precision_recall_curve
 
 from analysis.rq2_rq4 import GRID, INK, MUTED, SURFACE
 from model.severity import (FEATURES, LEFT_OUT, SEED, calibration, expand, fit, folds, logistic_model,
-                            out_of_fold, prepare, scores, shap_values, xgboost_model)
+                            out_of_fold, prepare, scores, shap_values, tuned_params, xgboost_model)
 
 ROOT = Path(__file__).resolve().parent.parent
 MARTS = ROOT / "data" / "marts"
@@ -99,17 +101,23 @@ def main() -> int:
     table = pd.read_parquet(MARTS / "ml_casualty_severity.parquet")
     features, label, groups = prepare(table)
     splits = folds(groups)
+    params = tuned_params()
 
     predictions = {
         "No skill": np.concatenate([np.full(len(test), label.iloc[train].mean()) for train, test in splits])[
             np.argsort(np.concatenate([test for _, test in splits]))],
         "Logistic regression": out_of_fold(lambda: logistic_model(features), features, label, splits),
-        "XGBoost": out_of_fold(xgboost_model, features, label, splits),
+        "XGBoost": out_of_fold(lambda: xgboost_model(params), features, label, splits),
     }
     results = pd.DataFrame([{"model": name, **scores(label, p)} for name, p in predictions.items()])
+    per_fold = pd.DataFrame([{"model": name, "fold": i, **scores(label.iloc[test], p[test])}
+                             for name, p in predictions.items() for i, (_, test) in enumerate(splits)])
+    spread = per_fold.groupby("model", sort=False)[["average_precision", "roc_auc", "log_loss"]].std()
+    gain = (per_fold[per_fold["model"] == "XGBoost"].set_index("fold")["average_precision"]
+            - per_fold[per_fold["model"] == "Logistic regression"].set_index("fold")["average_precision"])
     calibrated = calibration(label, predictions["XGBoost"])
 
-    final = fit(xgboost_model(), features, label)
+    final = fit(xgboost_model(params), features, label)
     final.save_model(RESULTS / "severity_xgboost.json")
     sample = features.iloc[np.sort(np.random.default_rng(SEED).choice(len(features), SHAP_SAMPLE, replace=False))]
     contributions = shap_values(final, sample)
@@ -122,7 +130,7 @@ def main() -> int:
     speed["odds_ratio_shap"] = np.exp(speed["mean_shap"] - reference["mean_shap"])
     speed["odds_ratio_raw"] = odds / (reference["ksi_share"] / (1 - reference["ksi_share"]))
 
-    results.to_parquet(RESULTS / "severity_scores.parquet", index=False, compression="zstd")
+    per_fold.to_parquet(RESULTS / "severity_scores.parquet", index=False, compression="zstd")
     importance.rename("mean_abs_shap").rename_axis("field").reset_index().to_parquet(
         RESULTS / "severity_shap.parquet", index=False, compression="zstd")
     chart_precision_recall(label, {k: v for k, v in predictions.items() if k != "No skill"},
@@ -132,11 +140,17 @@ def main() -> int:
     print(f"Phase 8, part B: what makes a casualty killed or seriously injured, once a crash has happened")
     print(f"{len(label):,} casualties in {groups.nunique():,} collisions, 2021-2025; label = DfT's adjusted KSI probability "
           f"(mean {label.mean():.1%}); {len(FEATURES)} fields recorded at the scene")
+    print(f"XGBoost settings tuned on 2021-2024 (model/parameters/severity_xgboost.json): "
+          f"{params['n_estimators']} trees, depth {params['max_depth']}, learning rate {params['learning_rate']}")
     print(f"5-fold cross-validation grouped by collision: no crash is in both training and test data\n")
-    print(f"  {'':22s}{'average precision':>19s}{'ROC AUC':>10s}{'log loss':>10s}")
+    print(f"  {'':22s}{'average precision':>22s}{'ROC AUC':>16s}{'log loss':>16s}   (out of fold, ± spread across folds)")
     for _, r in results.iterrows():
-        print(f"  {r['model']:22s}{r['average_precision']:19.3f}{r['roc_auc']:10.3f}{r['log_loss']:10.3f}")
+        s = spread.loc[r["model"]]
+        print(f"  {r['model']:22s}{r['average_precision']:13.3f} ± {s['average_precision']:.3f}"
+              f"{r['roc_auc']:10.3f} ± {s['roc_auc']:.3f}{r['log_loss']:10.3f} ± {s['log_loss']:.3f}")
     print("  Average precision is the area under the precision-recall curve; with no skill it equals the KSI share.")
+    print(f"  XGBoost beat logistic regression in {int((gain > 0).sum())} of {len(gain)} folds, by "
+          f"{gain.min():.3f} to {gain.max():.3f} in average precision.")
     gap = (calibrated["predicted"] - calibrated["observed"]).abs().max()
     print(f"\n  Calibration (XGBoost, out of fold): across tenths of the predictions, predicted and observed KSI "
           f"probability differ by at most {gap:.3f}")
@@ -150,6 +164,8 @@ def main() -> int:
     print("\nFields left out, and why:")
     for field, reason in LEFT_OUT.items():
         print(f"  {field}: {reason}")
+    print("\nSHAP values explain the model, not the world: related fields (casualty type, vehicle type, casualty class)")
+    print("share credit between them, and the speed-limit pattern is an association, not the effect of changing a limit.")
     print("\nScope: this shows which crashes end up more severe. It does not estimate what a speed cap would do,")
     print("because a cap also changes which crashes happen at all.")
     print(f"\nWrote results/severity_scores.parquet, severity_shap.parquet, severity_xgboost.json and two charts to figures/")
