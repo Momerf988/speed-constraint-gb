@@ -177,3 +177,36 @@ models:
       - name: collisions_per_casualty
         data_tests: [not_null]
 
+  - name: agg_casualties_force_month
+    description: >
+      Casualties, deaths and adjusted KSI per police force, month and road group ('32 or 48 km/h roads',
+      'other roads') from 2015, with zero rows where there were none. The panel for the Wales
+      difference-in-differences study.
+    columns:
+      - name: road_group
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['32 or 48 km/h roads', 'other roads']
+      - name: country
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['England', 'Wales', 'Scotland']
+      - name: casualties
+        data_tests: [not_null]
+
+  - name: ml_casualty_severity
+    description: One row per casualty from 2021 to 2025, with fields recorded at the scene and the adjusted KSI probability as label. The input for the severity model.
+    columns:
+      - name: casualty_key
+        data_tests: [unique, not_null]
+      - name: collision_index
+        data_tests: [not_null]
+      - name: speed_limit_kmh
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [32, 48, 64, 80, 97, 113]
+                quote: false
+

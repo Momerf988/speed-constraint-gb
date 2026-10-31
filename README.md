@@ -7,12 +7,13 @@ This project answers that with the government's own data and appraisal values: e
 police-reported injury collision since 1979, DfT traffic and speed statistics, and DfT's
 official values for a prevented casualty and for an hour of travel time.
 
-**Status:** Phase 7 of 9 complete. All 37.5 million STATS19 rows (1979–2025) are loaded into
+**Status:** Phase 8 of 9 complete. All 37.5 million STATS19 rows (1979–2025) are loaded into
 PostgreSQL and modelled with dbt into a tested star schema, joined to DfT traffic and
 free-flow speed statistics. A casualty model in Python estimates the deaths and injuries each
 policy would prevent, with Monte Carlo ranges and an explicit label wherever a scenario goes
 beyond the evidence, and an appraisal prices them against the travel time each policy costs,
-using DfT's TAG values.
+using DfT's TAG values. A causal study of Wales's 2023 default 32 km/h limit and a
+machine-learning severity model check the picture against what actually happened on the roads.
 
 ## Pipeline
 
@@ -26,12 +27,12 @@ DfT files → PostgreSQL (raw) → dbt: staging → intermediate → star schema
 | `staging` | Clear names, `-1` "unknown" codes turned into nulls (views) |
 | `intermediate` | km/h speed limits, DfT road categories, keys, reported and adjusted severity (views) |
 | `marts` | Star schema: `fct_casualty`, `fct_collision`, `dim_date`, `dim_road`, `dim_police_force`, `dim_casualty_profile`, plus aggregates for rates, speed bands, the casualty baseline, traffic per road type and collisions per casualty (tables) |
-| `model/` | Python: speed distributions, policies, speed-risk curves, Monte Carlo and appraisal, with every parameter and £ value traced to its source cell |
+| `model/` | Python: speed distributions, policies, speed-risk curves, Monte Carlo and appraisal, with every parameter and £ value traced to its source cell; difference-in-differences and the severity model |
 
-69 data tests run on every build: key uniqueness, fact-to-dimension relationships, allowed
+80 data tests run on every build: key uniqueness, fact-to-dimension relationships, allowed
 values, row conservation from raw to facts and into the model's inputs, the rules of DfT's
 severity adjustment, and reconciliation against DfT's published casualty, traffic and speed
-figures. 53 pytest tests cover the model and the appraisal.
+figures. 65 pytest tests cover the models, the appraisal and the causal and machine-learning code.
 
 ## RQ1: where harm happens, per kilometre driven
 
@@ -109,6 +110,54 @@ publishes traffic by road class, not speed limit, so it is split by casualty sha
 overstates traffic on single carriageways; vans are assumed to drive like cars; fuel,
 emissions and vehicle operating costs are left out.
 
+## Wales: did the 32 km/h default cut casualties?
+
+![Wales against England, quarter by quarter](figures/wales_event_study.png)
+
+Wales made 32 km/h (20 mph) the default on its restricted roads on 17 September 2023. A
+difference-in-differences design compares monthly casualties on Welsh 32 and 48 km/h roads with
+the same roads in England, police force by police force, from January 2022 to December 2025
+(Poisson regression with force and month fixed effects).
+
+- Casualties on these Welsh roads fell 17.5% more than England's trend implies: a rate ratio of
+  0.825 (95% interval 0.687–0.991). Random sets of four English forces showed a change as large
+  in only 3.8% of 2,000 draws. Adjusted KSI fell 14% more (0.858, 0.747–0.985).
+- Welsh roads the policy did not touch, at 64 km/h and above, show no change (1.065,
+  0.971–1.169), so the fall is not a Wales-wide shift.
+- The comparison starts in 2022 because the event study shows Wales was already falling
+  relative to England between 2019 and 2022. Counting 2017–2019 as "before" would credit the
+  policy with that older fall, and give 0.748.
+- Under the Exponential speed-risk model, a 17.5% fall needs mean speeds about 3.2 km/h lower
+  across these roads. Transport for Wales reports larger falls, about 6.4 km/h, at its 38
+  monitoring sites (secondary summaries); this road group also includes 48 km/h roads that
+  kept their limit.
+
+Limits: with four Welsh forces, the intervals are indicative; England's own move to 20 mph (a
+quarter of these English casualties are now on 32 km/h roads) biases the estimate towards
+zero; there is no traffic count by force and month.
+
+## What makes a casualty killed or seriously injured?
+
+![Which fields drive severity, and the speed limit's part](figures/severity_drivers.png)
+
+An XGBoost model learns each casualty's adjusted probability of being killed or seriously
+injured from 27 fields recorded at the scene (2021–2025, 652,821 casualties). Fields that follow
+from the outcome or reflect police recording (number of casualties, police force,
+contributory factors) are left out, and cross-validation keeps each collision's casualties
+together.
+
+- Out of fold, it reaches an average precision of 0.457, against 0.218 with no skill and 0.426
+  for logistic regression on the same fields (ROC AUC 0.745), and its probabilities are
+  calibrated to within 0.4 percentage points.
+- Who was hurt matters most (pedestrian, rider or occupant), then what the vehicle was doing,
+  where it was hit and the casualty's age; the speed limit comes fifth.
+- Holding the other fields, the odds of KSI rise steadily with the limit: 0.92 at 32 km/h, 1.22
+  at 64, 1.38 at 80 and 1.50 at 97 and 113 km/h, against 48 km/h roads. Raw figures hide this on
+  motorways (0.95), where crashes involve different people and impacts.
+
+Scope: this shows which crashes end up more severe. It does not estimate what a cap would do,
+because a cap also changes which crashes happen at all.
+
 ## Run it
 
 Requires Python 3.12+, [uv](https://docs.astral.sh/uv/) and PostgreSQL 17 with a database
@@ -118,15 +167,17 @@ called `speed_gb`.
 make setup      # create the Python environment
 make ingest     # download the raw data (about 4.3 GB) and write ingest/manifest.json
 make db         # build the raw database: schema, bulk load, keys, code lookups, traffic, speeds
-make transform  # build the dbt layers and run all 69 data tests
+make transform  # build the dbt layers and run all 80 data tests
 make export     # export the marts to Parquet in data/marts/
 make docs       # browse the documentation and lineage graph
 make rq1        # RQ1 rates and charts, written to figures/
 make values     # extract DfT's appraisal values into model/parameters/appraisal_values.csv
-make test       # run the 53 model tests
+make test       # run the 65 model tests
 make speeds     # speed distributions from DfT's bands, checked against DfT's own figures
 make rq2        # RQ2 and RQ4: casualties prevented by each policy, with Monte Carlo ranges
 make rq3        # RQ3: benefit, time cost and benefit-cost ratio of each policy
+make wales      # Wales 32 km/h default: difference-in-differences against England
+make severity   # severity model: XGBoost with SHAP, cross-validated by collision
 ```
 
 ## Deliberately not used

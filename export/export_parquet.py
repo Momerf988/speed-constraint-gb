@@ -38,6 +38,8 @@ TABLES = [
     "agg_casualties_segment_year",
     "agg_traffic_segment",
     "agg_collisions_per_casualty",
+    "agg_casualties_force_month",
+    "ml_casualty_severity",
 ]
 
 

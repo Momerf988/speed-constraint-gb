@@ -1,4 +1,4 @@
-.PHONY: setup ingest db transform docs export rq1 test speeds rq2 values rq3
+.PHONY: setup ingest db transform docs export rq1 test speeds rq2 values rq3 wales severity
 
 # Create the Python environment from pyproject.toml.
 setup:
@@ -55,3 +55,11 @@ values:
 # Phase 7: RQ3 cost-benefit appraisal, written to results/ and figures/.
 rq3:
 	uv run python -m analysis.rq3
+
+# Phase 8: Wales 32 km/h default, difference-in-differences against England, written to results/ and figures/.
+wales:
+	uv run python -m analysis.wales
+
+# Phase 8: severity model (XGBoost, SHAP), written to results/ and figures/.
+severity:
+	uv run python -m analysis.severity
