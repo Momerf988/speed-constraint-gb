@@ -23,8 +23,9 @@ What the difference is measured from after a policy is an assumption, and there 
     old        today's mean, which Kloeden et al. (2002) kept fixed as an absolute reference point
     absolute   on urban roads, the absolute curve: speed minus 60 km/h, held at 45 and 80 km/h, as
                ISA-UK did on 48 and 64 km/h roads. Rural roads keep the new mean, as ISA-UK did.
-None of these is conservative for every comparison: which gives the larger increment beyond
-business-as-usual ISA depends on how much that baseline has already slowed traffic.
+An increment beyond business-as-usual ISA is the difference between two reductions, so the new
+mean need not give the smaller increment. In the runs here it does, but that is a result, not a
+property of the method.
 
 Each curve is used only on the speed differences it was fitted on; beyond them the risk is
 held at the edge value. That never credits a benefit the evidence does not show, but it cuts

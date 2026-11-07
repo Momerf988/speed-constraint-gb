@@ -7,6 +7,8 @@ Runs the casualty model on 2024 speeds and 2022-2024 casualties in three ways:
 then compares the results with published estimates, prints the findings and writes:
     results/casualty_model.parquet        central result and 5th/50th/95th percentiles
     results/casualty_model_draws.parquet  every draw, for the cost-benefit analysis (Phase 7)
+    results/casualty_sensitivity.parquet  all four road types, one modelling choice changed at a time
+    results/casualty_validation.parquet   the model beside published estimates
     figures/rq2_rq4_deaths_prevented.png
     figures/rq2_speeds_97kmh.png
 
@@ -352,6 +354,10 @@ def main() -> int:
         "Speed control in every car": (distributions, central_assumptions, replace(central_isa, speed_control_share=1.0)),
         "Warning only in every car": (distributions, central_assumptions, replace(central_isa, speed_control_share=0.0)),
         "ISA shows a van its own limit": (distributions, central_assumptions, replace(central_isa, vans_read_own_limit=True)),
+        "Stronger ISA, from the new mean": (distributions, central_assumptions,
+                                            replace(central_isa, speed_control_share=1.0, override_targets_speeding=False)),
+        "Stronger ISA, from today's mean": (distributions, replace(central_assumptions, reference_mean="old"),
+                                            replace(central_isa, speed_control_share=1.0, override_targets_speeding=False)),
     }
     sensitivity = pd.concat([totals(run(d, baseline, a, isa)).assign(sensitivity=name)
                              for name, (d, a, isa) in sensitivities.items()], ignore_index=True)
@@ -375,6 +381,8 @@ def main() -> int:
                                                                free_travel_share=1.0, free_travel_share_rural=1.0)))
 
     summary.to_parquet(RESULTS / "casualty_model.parquet", index=False, compression="zstd")
+    sensitivity.to_parquet(RESULTS / "casualty_sensitivity.parquet", index=False, compression="zstd")
+    validation.to_parquet(RESULTS / "casualty_validation.parquet", index=False, compression="zstd")
     keep = ["draw", "segment", "policy", "mean_change_kmh", "evidence", "evidence_vs_bau",
             *PREVENTED_COLUMNS, *(f"{c}_vs_bau" for c in PREVENTED_COLUMNS), *(f"{c}_vs_bau" for c in SAVED_COLUMNS)]
     draws[keep].to_parquet(RESULTS / "casualty_model_draws.parquet", index=False, compression="zstd")

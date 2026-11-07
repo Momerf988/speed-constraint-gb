@@ -10,6 +10,11 @@ benefit over annual time cost: there are no present values and no hardware costs
     bound         for caps beyond the evidence, the most they could possibly save
 then prints the findings and writes:
     results/appraisal.parquet               central result and Monte Carlo percentiles
+    results/appraisal_sensitivity.parquet   the 80 km/h cap on 97 km/h roads, one assumption changed at a time
+    results/appraisal_flat.parquet          a flat limiter: the four road types added up
+    results/appraisal_bound.parquet         caps beyond the evidence: the best ratio possible
+    results/appraisal_all_time.parquet      compliance if time gained by speeding were counted
+    results/appraisal_target.parquet        shares of the 2035 target
     figures/rq3_benefit_cost_ratio.png
     figures/rq3_cap80_sensitivity.png
 
@@ -435,6 +440,8 @@ def main() -> int:
         "Model A: Power Model": (focus["benefit_power"], focus["cost"]),
         "Model A: Exponential model": (focus["benefit_exp"], focus["cost"]),
         "Speed difference from today's mean": (benefit_under(replace(central_assumptions, reference_mean="old")), focus["cost"]),
+        "Adelaide's urban free-travel share (0.56)": (
+            benefit_under(replace(central_assumptions, free_travel_share_rural=central_assumptions.free_travel_share)), focus["cost"]),
         "Brenac's flatter risk curve": (benefit_under(replace(central_assumptions, urban_curve="brenac2015_exponential_coef",
                                                               rural_curve="brenac2015_exponential_coef")), focus["cost"]),
         "Previous TAG casualty values (RAS4001)": (
@@ -479,6 +486,15 @@ def main() -> int:
     }
 
     summary.to_parquet(RESULTS / "appraisal.parquet", index=False, compression="zstd")
+    sens.to_parquet(RESULTS / "appraisal_sensitivity.parquet", index=False, compression="zstd")
+    flat.reset_index().to_parquet(RESULTS / "appraisal_flat.parquet", index=False, compression="zstd")
+    bound.to_parquet(RESULTS / "appraisal_bound.parquet", index=False, compression="zstd")
+    compliance_all_time[["segment", "benefit", "cost", "net", "break_even_free_flow"]].to_parquet(
+        RESULTS / "appraisal_all_time.parquet", index=False, compression="zstd")
+    pd.DataFrame([{"row": name, "ksi": ksi, "p5": p5, "p95": p95, "share": ksi / target["required"],
+                   "required": target["required"], "baseline": target["baseline"]}
+                  for name, (ksi, p5, p95) in target["rows"].items()]).to_parquet(
+        RESULTS / "appraisal_target.parquet", index=False, compression="zstd")
     chart_bcr(summary, FIGURES / "rq3_benefit_cost_ratio.png")
     chart_sensitivity(sens, FIGURES / "rq3_cap80_sensitivity.png")
     print_findings(summary, values, traffic, ratios, baseline, compliance_all_time, sens, target, bound, flat)
