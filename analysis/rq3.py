@@ -1,11 +1,13 @@
-"""Phase 7: do the policies pay for themselves? Casualties prevented against travel time lost (RQ3).
+"""Phase 7: do the policies pay for themselves? Casualties, fuel and carbon against travel time lost (RQ3).
 
 Combines the casualty model (Phase 6), DfT's appraisal values (model/parameters/
 appraisal_values.csv) and car and van traffic per road type (data/marts/agg_traffic_segment).
-Every policy is measured against business-as-usual ISA, in £ a year. Runs:
+Every policy is measured against business-as-usual ISA, in £ a year. "Ratio" throughout is annual
+benefit over annual time cost: there are no present values and no hardware costs. Runs:
     central       the central assumptions
     Monte Carlo   the 10,000 casualty draws from Phase 6, each with a free-flow share drawn too
     sensitivity   one assumption changed at a time, for the 80 km/h cap on 97 km/h roads
+    bound         for caps beyond the evidence, the most they could possibly save
 then prints the findings and writes:
     results/appraisal.parquet               central result and Monte Carlo percentiles
     figures/rq3_benefit_cost_ratio.png
@@ -31,8 +33,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from analysis.rq2_rq4 import COLOURS, GRID, INK, MUTED, POLICY_NAMES, SHOWN, SURFACE, colour
-from model.appraisal import (FREE_FLOW_RANGES, FREE_FLOW_SHARE, break_even_free_flow, casualty_benefit,
-                             hours_lost_per_km, ksi_from_casualties, load_values, time_cost)
+from model.appraisal import (FREE_FLOW_RANGES, FREE_FLOW_SHARE, break_even_free_flow, capital_cost, casualty_benefit,
+                             hours_lost_per_km, ksi_from_casualties, load_values, read_values, time_cost)
 from model.casualties import Assumptions
 from model.run import BASELINE_YEARS, load_inputs, run, speed_distributions
 from model.scenarios import POLICIES, ROAD_TYPES, IsaUse, held_to_limit
@@ -132,16 +134,31 @@ def appraise(casualties: pd.DataFrame, hours: pd.DataFrame, traffic, baseline, v
         free_flow = FREE_FLOW_SHARE
     share = free_flow if isinstance(free_flow, pd.Series) else table["segment"].map(free_flow)
     table["free_flow_share"] = share
+
+    def per_year(item):
+        """£ or kg a year saved beyond business-as-usual ISA by the free-flowing share of traffic."""
+        return (table[f"car_{item}_saved_per_km_vs_bau"] * cars + table[f"van_{item}_saved_per_km_vs_bau"] * vans) * 1e9 * share
+
+    table["fuel_benefit"] = per_year("fuel")
+    table["carbon_benefit"] = per_year("co2") / 1000 * values.carbon_tonne
+    table["tax_lost"] = per_year("tax")
+    table["casualty_benefit"] = table["benefit"]
+    running = table["fuel_benefit"] + table["carbon_benefit"]
+    for column in ("benefit", "benefit_b", "benefit_power", "benefit_exp"):
+        table[column] = table[column] + running
+
     table["costs_lawful_time"] = table["car_hours_per_km"] + table["van_hours_per_km"] > 1e-12
     table["time_cost"] = time_cost(table["car_hours_per_km"], table["van_hours_per_km"], cars, vans, values, share)
+    table["capital_cost"] = capital_cost(table["car_hours_per_km"], table["van_hours_per_km"], cars, vans, values, share)
     table["van_time_cost"] = time_cost(0.0, table["van_hours_per_km"], cars, vans, values, share)
-    table["net"] = table["benefit"] - table["time_cost"]
-    table["bcr"] = np.where(table["time_cost"] > 0, table["benefit"] / table["time_cost"].where(table["time_cost"] > 0), np.inf)
-    table["break_even_free_flow"] = break_even_free_flow(table["benefit"].to_numpy(), table["car_hours_per_km"].to_numpy(),
-                                                         table["van_hours_per_km"].to_numpy(), cars.to_numpy(),
-                                                         vans.to_numpy(), values)
+    table["cost"] = table["time_cost"] + table["capital_cost"]
+    table["net"] = table["benefit"] - table["cost"]
+    paid = table["cost"].where(table["cost"] > 0)
+    table["bcr"] = np.where(table["cost"] > 0, table["benefit"] / paid, np.inf)
+    table["break_even_free_flow"] = break_even_free_flow(table["casualty_benefit"].to_numpy(), (running / share).to_numpy(),
+                                                         (table["cost"] / share).to_numpy())
     for model in MODELS:
-        table[f"bcr_{model}"] = table[f"benefit_{model}"] / table["time_cost"].where(table["time_cost"] > 0)
+        table[f"bcr_{model}"] = table[f"benefit_{model}"] / paid
     return table
 
 
@@ -157,12 +174,13 @@ def monte_carlo(draws: pd.DataFrame, hours, traffic, baseline, values, ratios) -
 
 def summarise(central: pd.DataFrame, mc: pd.DataFrame) -> pd.DataFrame:
     keys = ["segment", "policy"]
-    q = mc.groupby(keys, sort=False)[["benefit", "time_cost", "net", "bcr"]].quantile([0.05, 0.5, 0.95]).unstack()
+    q = mc.groupby(keys, sort=False)[["benefit", "cost", "net", "bcr"]].quantile([0.05, 0.5, 0.95]).unstack()
     q.columns = [f"{column}_p{round(p * 100)}" for column, p in q.columns]
     q["chance_net_positive"] = mc.assign(pays=mc["net"] > 0).groupby(keys, sort=False)["pays"].mean()
     keep = ["segment", "policy", "evidence_vs_bau", "car_hours_per_km", "van_hours_per_km", "costs_lawful_time",
-            "free_flow_share", "ksi_prevented",
-            "benefit", "benefit_b", "benefit_power", "benefit_exp", "time_cost", "van_time_cost", "net", "bcr", "bcr_b",
+            "free_flow_share", "ksi_prevented", "casualty_benefit", "fuel_benefit", "carbon_benefit", "tax_lost",
+            "benefit", "benefit_b", "benefit_power", "benefit_exp", "time_cost", "capital_cost", "van_time_cost", "cost",
+            "net", "bcr", "bcr_b",
             "bcr_power", "bcr_exp", "break_even_free_flow"]
     return central[keep].merge(q.reset_index(), on=keys, how="left")
 
@@ -180,8 +198,31 @@ def focus_row(table: pd.DataFrame) -> pd.Series:
     return table[(table["segment"] == FOCUS[0]) & (table["policy"] == FOCUS[1])].iloc[0]
 
 
+def best_possible(summary: pd.DataFrame, baseline: pd.DataFrame, values, ratios) -> pd.DataFrame:
+    """For caps beyond the evidence: the ratio if the cap prevented every casualty on that road type.
+
+    No speed-risk model is needed: if even this falls short of the time cost, the cap fails whatever
+    its safety effect. Fuel and carbon are added at their modelled values. It holds on TAG's convention
+    of valuing reported casualties, so the same bound is given with unreported injuries counted too.
+    """
+    rows = summary[summary["costs_lawful_time"] & (summary["evidence_vs_bau"] == "beyond")
+                   & summary["policy"].isin(SHOWN)].copy()
+    base = baseline.loc[rows["segment"]]
+
+    def every_casualty(include_unreported):
+        return casualty_benefit(base["killed"].to_numpy(), base["ksi"].to_numpy(), base["casualties"].to_numpy(),
+                                values, ratios, include_unreported)
+
+    rows["every_casualty"] = every_casualty(False)
+    rows["every_casualty_unreported"] = every_casualty(True)
+    running = rows["fuel_benefit"] + rows["carbon_benefit"]
+    rows["best_ratio"] = (rows["every_casualty"] + running) / rows["cost"]
+    rows["best_ratio_unreported"] = (rows["every_casualty_unreported"] + running) / rows["cost"]
+    return rows
+
+
 def sensitivity(cases: dict[str, tuple[float, float]]) -> pd.DataFrame:
-    """Net benefit and benefit-cost ratio of the focus policy, from (benefit, time cost) per case."""
+    """Net benefit and ratio of the focus policy, from (benefit, cost) per case."""
     return pd.DataFrame([{"sensitivity": name, "net": benefit - cost, "bcr": benefit / cost}
                          for name, (benefit, cost) in cases.items()])
 
@@ -193,51 +234,71 @@ def pays_if(share: float) -> str:
     return f"pays if under {share:.0%} of traffic flows freely"
 
 
-def print_findings(summary, values, traffic, ratios, baseline, compliance_all_time, sens, target):
+def print_findings(summary, values, traffic, ratios, baseline, compliance_all_time, sens, target, bound, flat):
     print("Phase 7 appraisal: £ a year beyond business-as-usual ISA, 2023 prices and values (TAG data book v2.03),")
     print("every car fitted, 2022-2024 casualty and traffic levels")
     print(f"Values: £{values.per_casualty['fatal']:,.0f} per death, £{values.per_casualty['serious']:,.0f} per serious and "
           f"£{values.per_casualty['slight']:,.0f} per slight injury, plus per-collision costs")
     print(f"        (collisions per casualty: fatal {ratios['fatal']:.3f}, serious {ratios['serious']:.3f}, "
-          f"slight {ratios['slight']:.3f}); £{values.car_hour:.2f} per car-hour, £{values.van_hour:.2f} per van-hour")
+          f"slight {ratios['slight']:.3f}); £{values.car_hour:.2f} per car-hour, £{values.van_hour:.2f} per van-hour,")
+    print(f"        £{values.car_capital_hour:.2f} and £{values.van_capital_hour:.2f} of vehicle capital per car- and van-hour; "
+          f"£{values.carbon_tonne:.2f} per tonne of CO2e")
     print("Car and van traffic, billion vehicle-km a year: " + ", ".join(
         f"{s} {traffic.loc[s, 'cars'] + traffic.loc[s, 'vans']:.1f}" for s in FREE_FLOW_SHARE))
     print("Free-flowing share of traffic (a judgement, no published source): 40% on 32 and 48 km/h roads, "
           "70% on 97 km/h roads and motorways\n")
+
+    print("Ratio: annual benefit / annual time cost, with no present values and no hardware cost\n")
 
     print("1. Policies that cost no lawful time: every second they cost was gained by speeding (£m a year)")
     free = summary[~summary["costs_lawful_time"] & (summary["benefit"] > 0.5e6) & summary["policy"].isin(SHOWN)]
     for _, r in free.iterrows():
         label = "at least " if r["evidence_vs_bau"] == "lower bound" else ""
         spread = "" if r["evidence_vs_bau"] == "lower bound" else f"  [{millions(r['benefit_p5'])} to {millions(r['benefit_p95'])}]"
-        print(f"   {r['segment']:28s} {POLICY_NAMES[r['policy']]:24s} benefit {label}{millions(r['benefit']):>5s}{spread}")
+        print(f"   {r['segment']:28s} {POLICY_NAMES[r['policy']]:24s} benefit {label}{millions(r['benefit']):>5s}{spread}; "
+              f"of which fuel {millions(r['fuel_benefit'])}, carbon {millions(r['carbon_benefit'])}; "
+              f"tax lost {millions(r['tax_lost'])}")
     compliance = free[free["policy"] == "compliance"]
     print(f"   {'All four road types':28s} {POLICY_NAMES['compliance']:24s} benefit at least {millions(compliance['benefit'].sum())}")
 
-    print("\n2. Caps that cost lawful time (£m a year): central [5th to 95th percentile]")
+    print("\n2. Caps that cost lawful time, by road type (£m a year): central [5th to 95th percentile]")
     costly = summary[summary["costs_lawful_time"] & summary["policy"].isin(SHOWN)]
     for _, r in costly.iterrows():
         head = f"   {r['segment']:28s} {POLICY_NAMES[r['policy']]:16s}"
         if r["evidence_vs_bau"] == "within":
-            print(f"{head} benefit {millions(r['benefit'])}, time cost {millions(r['time_cost'])}, "
+            print(f"{head} casualties {millions(r['casualty_benefit'])} + fuel {millions(r['fuel_benefit'])} + "
+                  f"carbon {millions(r['carbon_benefit'])} = {millions(r['benefit'])}; time {millions(r['time_cost'])} + "
+                  f"vehicle capital {millions(r['capital_cost'])} = {millions(r['cost'])}; tax lost {millions(r['tax_lost'])}; "
                   f"net {millions(r['net'])} [{millions(r['net_p5'])} to {millions(r['net_p95'])}], "
-                  f"BCR {r['bcr']:.2f} [{r['bcr_p5']:.2f} to {r['bcr_p95']:.2f}], {pays_if(r['break_even_free_flow'])} "
+                  f"ratio {r['bcr']:.2f} [{r['bcr_p5']:.2f} to {r['bcr_p95']:.2f}], {pays_if(r['break_even_free_flow'])} "
                   f"(chance it pays: {r['chance_net_positive']:.0%})")
         else:
             low, high = model_range(r, "benefit")
             bcr_low, bcr_high = model_range(r, "bcr")
             print(f"{head} beyond the evidence: benefit {millions(low)} to {millions(high)} across models, "
-                  f"time cost {millions(r['time_cost'])}, BCR {bcr_low:.2f} to {bcr_high:.2f}")
+                  f"of which fuel {millions(r['fuel_benefit'])}, carbon {millions(r['carbon_benefit'])}; "
+                  f"cost {millions(r['cost'])}, ratio {bcr_low:.2f} to {bcr_high:.2f}")
+
+    print("\n   A flat limiter on every road: the four road types added up (£m a year)")
+    for policy, r in flat.iterrows():
+        print(f"   {POLICY_NAMES[policy]:16s} benefit {millions(r['benefit']):>6s}, cost {millions(r['cost']):>6s}, "
+              f"net {millions(r['net']):>7s}, ratio {r['ratio']:.2f}, deaths prevented {r['deaths']:.0f}")
+
+    print("\n   Best possible: caps beyond the evidence, if they prevented every casualty on the road type (£m a year)")
+    for _, r in bound.iterrows():
+        print(f"   {r['segment']:28s} {POLICY_NAMES[r['policy']]:16s} every casualty {millions(r['every_casualty']):>5s}, "
+              f"fuel and carbon {millions(r['fuel_benefit'] + r['carbon_benefit']):>5s}, cost {millions(r['cost']):>6s}, "
+              f"ratio at most {r['best_ratio']:.2f}; with unreported injuries {r['best_ratio_unreported']:.2f}")
 
     print("\n3. If time gained by speeding were counted too: posted-limit compliance (£m a year)")
     for _, r in compliance_all_time.iterrows():
         flag = "at least " if r["evidence_vs_bau"] == "lower bound" else ""
-        print(f"   {r['segment']:28s} benefit {flag}{millions(r['benefit']):>5s}, time cost {millions(r['time_cost']):>5s}, "
+        print(f"   {r['segment']:28s} benefit {flag}{millions(r['benefit']):>5s}, cost {millions(r['cost']):>5s}, "
               f"net {flag}{millions(r['net']):>6s}, {pays_if(r['break_even_free_flow'])}")
 
     print(f"\n4. {POLICY_NAMES[FOCUS[1]]} on {FOCUS[0]}: net benefit (£m a year), one assumption changed at a time")
     for _, r in sens.iterrows():
-        print(f"   {r['sensitivity']:46s} {millions(r['net']):>6s}   BCR {r['bcr']:.2f}")
+        print(f"   {r['sensitivity']:46s} {millions(r['net']):>6s}   ratio {r['bcr']:.2f}")
 
     print(f"\n5. Share of the 2035 target: {TARGET_CUT:.0%} fewer KSI than {target['baseline']:,.0f} a year "
           f"means {target['required']:,.0f} fewer a year")
@@ -275,8 +336,8 @@ def chart_bcr(summary: pd.DataFrame, path: Path) -> None:
     ax.tick_params(axis="y", length=0)
     for side in ("top", "right", "left"):
         ax.spines[side].set_visible(False)
-    ax.set_xlabel("Benefit-cost ratio beyond business-as-usual ISA (log scale)", color=MUTED, fontsize=9)
-    ax.set_title("Caps below the limit: casualty benefit against lawful time lost",
+    ax.set_xlabel("Annual benefit / annual time cost, beyond business-as-usual ISA (log scale)", color=MUTED, fontsize=9)
+    ax.set_title("Caps below the limit: casualties, fuel and carbon against lawful time lost",
                  loc="left", fontsize=11, color=INK)
     legend = [plt.Line2D([], [], color=COLOURS["cap"], marker="o", lw=2, label="Within the evidence: central, 5th-95th percentile"),
               plt.Line2D([], [], color=COLOURS["cap"], lw=6, alpha=0.25, label="Beyond the evidence: range across models")]
@@ -335,6 +396,12 @@ def main() -> int:
     all_time = appraise(casualties, hours_table(distributions, count_speeding_time=True), traffic, baseline, values, ratios)
     compliance_all_time = all_time[all_time["policy"] == "compliance"]
 
+    flat = central[central["policy"].isin(SHOWN)].groupby("policy", sort=False).agg(
+        benefit=("benefit", "sum"), cost=("cost", "sum"), net=("net", "sum"), deaths=("killed_prevented_vs_bau", "sum"))
+    flat["ratio"] = flat["benefit"] / flat["cost"].where(flat["cost"] > 0)
+    flat = flat.drop("compliance")
+    bound = best_possible(summary, baseline, values, ratios)
+
     focus_road = FOCUS[0]
     focus = focus_row(central)
     focus_mc = mc[(mc["segment"] == focus_road) & (mc["policy"] == FOCUS[1])]
@@ -346,29 +413,44 @@ def main() -> int:
     def benefit_under(assumptions):
         return focus_row(appraise(run(distributions, baseline, assumptions), hours, traffic, baseline, values, ratios))["benefit"]
 
+    def scaled(factor):
+        """Benefit and cost if the free-flowing traffic were this many times larger: casualties do not scale."""
+        return (focus["casualty_benefit"] + (focus["fuel_benefit"] + focus["carbon_benefit"]) * factor, focus["cost"] * factor)
+
+    def with_values(table, **changes):
+        return focus_row(appraise(table, hours, traffic, baseline, replace(values, **changes), ratios))
+
+    raw_values = read_values()
+    later_fleet = with_values(run(distributions, baseline, central_assumptions, fuel_year=2035),
+                              carbon_tonne=raw_values["carbon_central_2035"])
     sens = sensitivity({
-        "Central": (focus["benefit"], focus["time_cost"]),
-        f"Free-flowing traffic {low_flow:.0%} (central {central_flow:.0%})": (focus["benefit"], focus["time_cost"] * low_flow / central_flow),
-        f"Free-flowing traffic {high_flow:.0%}": (focus["benefit"], focus["time_cost"] * high_flow / central_flow),
-        "Traffic on 97 km/h roads 30% lower": (focus["benefit"], focus["time_cost"] * 0.7),
-        "Casualty draws: 5th percentile": (focus_mc["benefit"].quantile(0.05), focus["time_cost"]),
-        "Casualty draws: 95th percentile": (focus_mc["benefit"].quantile(0.95), focus["time_cost"]),
-        "Model A: Power Model": (focus["benefit_power"], focus["time_cost"]),
-        "Model A: Exponential model": (focus["benefit_exp"], focus["time_cost"]),
-        "Speed difference from today's mean": (benefit_under(replace(central_assumptions, reference_mean="old")), focus["time_cost"]),
+        "Central": (focus["benefit"], focus["cost"]),
+        f"Free-flowing traffic {low_flow:.0%} (central {central_flow:.0%})": scaled(low_flow / central_flow),
+        f"Free-flowing traffic {high_flow:.0%}": scaled(high_flow / central_flow),
+        "Traffic on 97 km/h roads 30% lower": scaled(0.7),
+        "Traffic on 97 km/h roads 30% higher": scaled(1.3),
+        "Casualty draws: 5th percentile": (focus_mc["casualty_benefit"].quantile(0.05) + focus["benefit"] - focus["casualty_benefit"], focus["cost"]),
+        "Casualty draws: 95th percentile": (focus_mc["casualty_benefit"].quantile(0.95) + focus["benefit"] - focus["casualty_benefit"], focus["cost"]),
+        "Model A: Power Model": (focus["benefit_power"], focus["cost"]),
+        "Model A: Exponential model": (focus["benefit_exp"], focus["cost"]),
+        "Speed difference from today's mean": (benefit_under(replace(central_assumptions, reference_mean="old")), focus["cost"]),
         "Brenac's flatter risk curve": (benefit_under(replace(central_assumptions, urban_curve="brenac2015_exponential_coef",
-                                                              rural_curve="brenac2015_exponential_coef")), focus["time_cost"]),
+                                                              rural_curve="brenac2015_exponential_coef")), focus["cost"]),
         "Previous TAG casualty values (RAS4001)": (
-            focus_row(appraise(casualties, hours, traffic, baseline, load_values("previous"), ratios))["benefit"], focus["time_cost"]),
+            focus_row(appraise(casualties, hours, traffic, baseline, load_values("previous"), ratios))["benefit"], focus["cost"]),
         "Injuries never reported to police counted": (
             focus_row(appraise(casualties, hours, traffic, baseline, values, ratios, include_unreported=True))["benefit"],
-            focus["time_cost"]),
-        "Time gained by speeding counted": (focus["benefit"], focus_row(all_time)["time_cost"]),
+            focus["cost"]),
+        "Time gained by speeding counted": (focus["benefit"], focus_row(all_time)["cost"]),
         "Vans have the car limit": (focus_row(appraise(run(distributions, baseline, central_assumptions, roads=vans_like_cars),
                                                        hours_table(distributions, roads=vans_like_cars), traffic, baseline,
                                                        values, ratios))["benefit"],
                                     focus_row(appraise(casualties, hours_table(distributions, roads=vans_like_cars), traffic,
-                                                       baseline, values, ratios))["time_cost"]),
+                                                       baseline, values, ratios))["cost"]),
+        "Fuel and carbon left out": (focus["casualty_benefit"], focus["cost"]),
+        "Fleet, prices and carbon value of 2035": (later_fleet["benefit"], focus["cost"]),
+        "Carbon at TAG's low value": (with_values(casualties, carbon_tonne=raw_values["carbon_low_2023"])["benefit"], focus["cost"]),
+        "Carbon at TAG's high value": (with_values(casualties, carbon_tonne=raw_values["carbon_high_2023"])["benefit"], focus["cost"]),
     })
 
     # Share of the 2035 target. BAU ISA is measured against today; the others against BAU ISA.
@@ -393,7 +475,7 @@ def main() -> int:
     summary.to_parquet(RESULTS / "appraisal.parquet", index=False, compression="zstd")
     chart_bcr(summary, FIGURES / "rq3_benefit_cost_ratio.png")
     chart_sensitivity(sens, FIGURES / "rq3_cap80_sensitivity.png")
-    print_findings(summary, values, traffic, ratios, baseline, compliance_all_time, sens, target)
+    print_findings(summary, values, traffic, ratios, baseline, compliance_all_time, sens, target, bound, flat)
     print(f"\nWrote {len(summary)} rows to results/appraisal.parquet and two charts to figures/")
     return 0
 

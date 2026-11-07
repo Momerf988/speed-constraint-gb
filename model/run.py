@@ -22,6 +22,7 @@ import duckdb
 import numpy as np
 import pandas as pd
 
+from model.appraisal import FUEL_YEAR, running_per_km
 from model.casualties import MAX_SHARE_CLAMPED, MODEL_A_RANGE_KMH, Assumptions, CarVanShares, model_a, model_b
 from model.scenarios import POLICIES, ROAD_TYPES, IsaUse, RoadType, Traffic, fleet_after, fleet_before
 from model.speeds import SpeedDistribution, band_intervals, empirical_distribution, fit, fitted_distribution
@@ -34,6 +35,7 @@ PREVENTED_COLUMNS = (
     "ksi_prevented_b",
     "casualties_prevented", "casualties_prevented_b", "casualties_prevented_power", "casualties_prevented_exp",
 )
+SAVED_COLUMNS = tuple(f"{vehicle}_{item}_saved_per_km" for vehicle in ("car", "van") for item in ("fuel", "tax", "co2"))
 
 
 @dataclass(frozen=True)
@@ -116,12 +118,14 @@ def worse(*labels: str) -> str:
 
 
 def run(distributions: dict[str, Traffic], baseline: pd.DataFrame, assumptions: Assumptions,
-        isa: IsaUse | None = None, roads: tuple[RoadType, ...] = ROAD_TYPES) -> pd.DataFrame:
+        isa: IsaUse | None = None, roads: tuple[RoadType, ...] = ROAD_TYPES, fuel_year: int = FUEL_YEAR) -> pd.DataFrame:
     isa = IsaUse.central() if isa is None else isa
     rows = []
     for road in roads:
         traffic = distributions[road.segment]
         today = traffic.mixed()
+        running_today = {"car": running_per_km(traffic.cars, "car", fuel_year),
+                         "van": running_per_km(traffic.vans, "van", fuel_year)}
         base = baseline.loc[road.segment]
         slight = base["casualties"] - base["ksi"]
         k = CarVanShares(fatal=base["k_fatal"], ksi=base["k_ksi"], slight=base["k_slight"])
@@ -157,12 +161,17 @@ def run(distributions: dict[str, Traffic], baseline: pd.DataFrame, assumptions: 
                 "casualties_prevented_power": base["casualties"] * (1 - a["power_casualties"]),
                 "casualties_prevented_exp": base["casualties"] * (1 - a["exponential_casualties"]),
             }
+            for vehicle, dist in (("car", cars), ("van", vans)):
+                running = running_per_km(dist, vehicle, fuel_year)
+                for item, value in running.items():
+                    r[f"{vehicle}_{item}_saved_per_km"] = running_today[vehicle][item] - value
+                r[f"{vehicle}_co2_per_km"] = running["co2"]
             r["killed_prevented"] = r[f"killed_prevented_{r['preferred_model']}"]
             r["casualties_prevented"] = r[f"casualties_prevented_{r['preferred_model']}"]
             results[policy] = r
         bau = results["bau_isa"]
         for r in results.values():
-            for column in PREVENTED_COLUMNS:
+            for column in PREVENTED_COLUMNS + SAVED_COLUMNS:
                 r[f"{column}_vs_bau"] = r[column] - bau[column]
             r["evidence_vs_bau"] = worse(r["evidence"], bau["evidence"])
             rows.append(r)

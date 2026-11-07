@@ -28,7 +28,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from model.casualties import Assumptions
-from model.run import PREVENTED_COLUMNS, load_inputs, run, speed_distributions, worse
+from model.run import PREVENTED_COLUMNS, SAVED_COLUMNS, load_inputs, run, speed_distributions, worse
 from model.scenarios import ROAD_TYPES, IsaUse, apply_policy, held_to_limit
 from model.uncertainty import N_DRAWS, SEED, monte_carlo, percentiles
 
@@ -62,6 +62,8 @@ VADEBY_SHARE_OF_DEATHS = 0.25        # Vadeby (2023): full compliance in Sweden,
 LAI_CHOSEN_TO_UNIVERSAL = 12 / 29    # Lai et al. (2012) via Day et al. (2023): serious injuries -12% vs -29%
 LAI_ADVISORY_TO_UNIVERSAL = 3 / 29   # the same source: advisory ISA, -3%
 TRL_DEATHS_IN_TARGET = 0.1636        # TRL (2024) Table 61: cars, killed, medium, of those in car collisions
+LAI_CO2_MANDATORY = 0.058            # Lai et al. (2012) via TRL (2024): CO2 saved on 113 km/h roads, mandatory ISA
+LAI_CO2_VOLUNTARY = 0.034            # the same source: voluntary ISA
 
 # Chart colours (light surface): one colour per policy kind, so a policy keeps its colour in every chart
 SURFACE, INK, MUTED, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#e4e3df"
@@ -193,6 +195,16 @@ def validate(central: pd.DataFrame, all_responding: pd.DataFrame, speed_control:
     bau_deaths = central[central["policy"] == "bau_isa"].set_index("segment")["killed_prevented"]
     bau_deaths_f1 = all_responding[all_responding["policy"] == "bau_isa"].set_index("segment")["killed_prevented"]
     responding = (baseline["killed"] * baseline["k_fatal"]).loc[bau_deaths.index].sum()
+    def motorway_car_co2_saved(table, policy):
+        r = table[(table["policy"] == policy) & (table["segment"] == "113 km/h motorways")].iloc[0]
+        return r["car_co2_saved_per_km"] / (r["car_co2_per_km"] + r["car_co2_saved_per_km"])
+
+    rows.append({"check": "CO2 saved on motorways, cars: mandatory ISA",
+                 "ours": motorway_car_co2_saved(central, "compliance"), "ours_f1": np.nan,
+                 "published": LAI_CO2_MANDATORY, "source": "Lai et al. (2012), via TRL (2024)"})
+    rows.append({"check": "CO2 saved on motorways, cars: ISA with speed control",
+                 "ours": motorway_car_co2_saved(speed_control, "bau_isa"), "ours_f1": np.nan,
+                 "published": LAI_CO2_VOLUNTARY, "source": "Lai et al. (2012), via TRL (2024)"})
     rows.append({"check": "Mandated ISA: deaths prevented / deaths in car collisions",
                  "ours": bau_deaths.sum() / responding, "ours_f1": bau_deaths_f1.sum() / responding,
                  "published": TRL_DEATHS_IN_TARGET, "source": "TRL (2024), half warning, half speed control"})
@@ -324,7 +336,7 @@ def main() -> int:
 
     summary.to_parquet(RESULTS / "casualty_model.parquet", index=False, compression="zstd")
     keep = ["draw", "segment", "policy", "mean_change_kmh", "evidence", "evidence_vs_bau",
-            *PREVENTED_COLUMNS, *(f"{c}_vs_bau" for c in PREVENTED_COLUMNS)]
+            *PREVENTED_COLUMNS, *(f"{c}_vs_bau" for c in PREVENTED_COLUMNS), *(f"{c}_vs_bau" for c in SAVED_COLUMNS)]
     draws[keep].to_parquet(RESULTS / "casualty_model_draws.parquet", index=False, compression="zstd")
     chart_deaths(summary, FIGURES / "rq2_rq4_deaths_prevented.png")
     chart_speeds(distributions, FIGURES / "rq2_speeds_97kmh.png")
