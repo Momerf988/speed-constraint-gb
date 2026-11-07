@@ -29,7 +29,7 @@ import matplotlib.pyplot as plt
 
 from model.casualties import Assumptions
 from model.run import PREVENTED_COLUMNS, load_inputs, run, speed_distributions, worse
-from model.scenarios import ROAD_TYPES, apply_policy, isa_working_share
+from model.scenarios import ROAD_TYPES, IsaUse, apply_policy, held_to_limit
 from model.uncertainty import N_DRAWS, SEED, monte_carlo, percentiles
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -60,6 +60,8 @@ ISA_UK_INJURY_REMAINING = {          # Tate and Carsten (2008): injury crashes l
 }
 VADEBY_SHARE_OF_DEATHS = 0.25        # Vadeby (2023): full compliance in Sweden, Exponential model
 LAI_CHOSEN_TO_UNIVERSAL = 12 / 29    # Lai et al. (2012) via Day et al. (2023): serious injuries -12% vs -29%
+LAI_ADVISORY_TO_UNIVERSAL = 3 / 29   # the same source: advisory ISA, -3%
+TRL_DEATHS_IN_TARGET = 0.1636        # TRL (2024) Table 61: cars, killed, medium, of those in car collisions
 
 # Chart colours (light surface): one colour per policy kind, so a policy keeps its colour in every chart
 SURFACE, INK, MUTED, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#e4e3df"
@@ -150,10 +152,12 @@ def print_findings(summary: pd.DataFrame, baseline: pd.DataFrame, sensitivity: p
     print("  f=1: every casualty in a car or van collision responds, not only the free-travel share")
 
 
-def validate(central: pd.DataFrame, all_responding: pd.DataFrame) -> pd.DataFrame:
+def validate(central: pd.DataFrame, all_responding: pd.DataFrame, speed_control: pd.DataFrame,
+             warning_only: pd.DataFrame, baseline: pd.DataFrame) -> pd.DataFrame:
     """The model's results next to the published figures they can be compared with.
 
     all_responding is the same run with f = 1, so the effect of the free-travel share is visible.
+    speed_control and warning_only are the same run with one kind of ISA in every car.
     """
     def compliance(table):
         return table[table["policy"] == "compliance"].set_index("segment")
@@ -179,9 +183,18 @@ def validate(central: pd.DataFrame, all_responding: pd.DataFrame) -> pd.DataFram
     rows.append({"check": "Deaths prevented by full compliance (modelled roads)",
                  "ours": deaths_share(central), "ours_f1": deaths_share(all_responding),
                  "published": VADEBY_SHARE_OF_DEATHS, "source": "Vadeby (2023), Sweden"})
-    rows.append({"check": "Overridable ISA's KSI benefit / mandatory ISA's",
-                 "ours": isa_share(central), "ours_f1": np.nan,
+    rows.append({"check": "ISA with speed control: KSI benefit / mandatory ISA's",
+                 "ours": isa_share(speed_control), "ours_f1": np.nan,
                  "published": LAI_CHOSEN_TO_UNIVERSAL, "source": "Lai et al. (2012), voluntary ISA"})
+    rows.append({"check": "ISA with warnings only: KSI benefit / mandatory ISA's",
+                 "ours": isa_share(warning_only), "ours_f1": np.nan,
+                 "published": LAI_ADVISORY_TO_UNIVERSAL, "source": "Lai et al. (2012), advisory ISA"})
+    bau_deaths = central[central["policy"] == "bau_isa"].set_index("segment")["killed_prevented"]
+    bau_deaths_f1 = all_responding[all_responding["policy"] == "bau_isa"].set_index("segment")["killed_prevented"]
+    responding = (baseline["killed"] * baseline["k_fatal"]).loc[bau_deaths.index].sum()
+    rows.append({"check": "Mandated ISA: deaths prevented / deaths in car collisions",
+                 "ours": bau_deaths.sum() / responding, "ours_f1": bau_deaths_f1.sum() / responding,
+                 "published": TRL_DEATHS_IN_TARGET, "source": "TRL (2024), half warning, half speed control"})
     return pd.DataFrame(rows)
 
 
@@ -241,7 +254,7 @@ def chart_speeds(distributions: dict, path: Path) -> None:
     """Share of cars at or below each speed on 97 km/h single carriageways, under four policies."""
     road = next(r for r in ROAD_TYPES if r.segment == "97 km/h single carriageways")
     today = distributions[road.segment]
-    working = isa_working_share(road)
+    working = held_to_limit(today, road, IsaUse.central())
     fig, ax = plt.subplots(figsize=(8, 4.8), facecolor=SURFACE)
     ax.set_facecolor(SURFACE)
     for policy, style in (("bau_isa", "-"), ("compliance", "-"), ("cap_80", "-"), ("today", "--")):
@@ -277,16 +290,20 @@ def main() -> int:
     central = run(distributions, baseline, central_assumptions)
     central = pd.concat([central, totals(central)], ignore_index=True)
 
+    central_isa = IsaUse.central()
     sensitivities = {
-        "Central": (distributions, central_assumptions),
-        "Difference from today's mean": (distributions, replace(central_assumptions, reference_mean="old")),
-        "Normal speed distribution": (speed_distributions(bands, "normal"), central_assumptions),
-        "Lognormal speed distribution": (speed_distributions(bands, "lognormal"), central_assumptions),
+        "Central": (distributions, central_assumptions, central_isa),
+        "Difference from today's mean": (distributions, replace(central_assumptions, reference_mean="old"), central_isa),
+        "Normal speed distribution": (speed_distributions(bands, "normal"), central_assumptions, central_isa),
+        "Lognormal speed distribution": (speed_distributions(bands, "lognormal"), central_assumptions, central_isa),
         "Brenac's flatter curve": (distributions, replace(central_assumptions, urban_curve="brenac2015_exponential_coef",
-                                                          rural_curve="brenac2015_exponential_coef")),
+                                                          rural_curve="brenac2015_exponential_coef"), central_isa),
+        "Override at random": (distributions, central_assumptions, replace(central_isa, override_targets_speeding=False)),
+        "Speed control in every car": (distributions, central_assumptions, replace(central_isa, speed_control_share=1.0)),
+        "Warning only in every car": (distributions, central_assumptions, replace(central_isa, speed_control_share=0.0)),
     }
-    sensitivity = pd.concat([totals(run(d, baseline, a)).assign(sensitivity=name)
-                             for name, (d, a) in sensitivities.items()], ignore_index=True)
+    sensitivity = pd.concat([totals(run(d, baseline, a, isa)).assign(sensitivity=name)
+                             for name, (d, a, isa) in sensitivities.items()], ignore_index=True)
 
     draws = monte_carlo(distributions, baseline, N_DRAWS, SEED)
     draws = pd.concat([draws, totals(draws)], ignore_index=True)
@@ -294,7 +311,11 @@ def main() -> int:
     summary = central.merge(ranges, on=["segment", "policy"], how="left")
 
     validation = validate(central[central["segment"] != ALL_ROADS],
-                          run(distributions, baseline, replace(central_assumptions, free_travel_share=1.0)))
+                          run(distributions, baseline, replace(central_assumptions, free_travel_share=1.0,
+                                                               free_travel_share_rural=1.0)),
+                          run(distributions, baseline, central_assumptions, replace(central_isa, speed_control_share=1.0)),
+                          run(distributions, baseline, central_assumptions, replace(central_isa, speed_control_share=0.0)),
+                          baseline)
 
     summary.to_parquet(RESULTS / "casualty_model.parquet", index=False, compression="zstd")
     keep = ["draw", "segment", "policy", "mean_change_kmh", "evidence", "evidence_vs_bau",

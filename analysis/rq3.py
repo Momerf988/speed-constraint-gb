@@ -35,7 +35,7 @@ from model.appraisal import (FREE_FLOW_RANGES, FREE_FLOW_SHARE, break_even_free_
                              hours_lost_per_km, ksi_from_casualties, load_values, time_cost)
 from model.casualties import Assumptions
 from model.run import BASELINE_YEARS, load_inputs, run, speed_distributions
-from model.scenarios import POLICIES, ROAD_TYPES, isa_working_share
+from model.scenarios import POLICIES, ROAD_TYPES, IsaUse, held_to_limit
 from model.uncertainty import N_DRAWS
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -108,7 +108,8 @@ def hours_table(distributions, count_speeding_time=False) -> pd.DataFrame:
     """
     rows = []
     for road in ROAD_TYPES:
-        today, working = distributions[road.segment], isa_working_share(road)
+        today = distributions[road.segment]
+        working = held_to_limit(today, road, IsaUse.central())
         lost = {p: hours_lost_per_km(p, today, road, working, count_speeding_time) for p in POLICIES}
         rows += [{"segment": road.segment, "policy": p, "hours_per_km": lost[p] - lost["bau_isa"]} for p in POLICIES]
     return pd.DataFrame(rows)

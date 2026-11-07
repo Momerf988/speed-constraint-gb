@@ -20,9 +20,8 @@ import duckdb
 import numpy as np
 import pandas as pd
 
-from model.casualties import MAX_SHARE_CLAMPED, MODEL_A_RANGE_KMH, Assumptions, model_a, model_b
-from model.scenarios import (ISA_SWITCHED_OFF_SHARE, POLICIES, ROAD_TYPES, apply_policy, isa_working_share,
-                             original_speeds)
+from model.casualties import MAX_SHARE_CLAMPED, MODEL_A_RANGE_KMH, Assumptions, CarVanShares, model_a, model_b
+from model.scenarios import POLICIES, ROAD_TYPES, IsaUse, apply_policy, held_to_limit, original_speeds
 from model.speeds import SpeedDistribution, band_intervals, empirical_distribution, fit, fitted_distribution
 
 BASELINE_YEARS = (2022, 2024)   # the Road Safety Strategy's own baseline
@@ -48,7 +47,9 @@ def load_inputs(marts_dir) -> tuple[pd.DataFrame, pd.DataFrame]:
                sum(casualties) / {years}                             as casualties,
                sum(killed_car_van) / sum(killed)                     as k_fatal,
                sum(ksi_adjusted_car_van) / sum(ksi_adjusted)         as k_ksi,
-               sum(casualties_car_van)::double / sum(casualties)     as k_casualties
+               sum(casualties_car_van)::double / sum(casualties)     as k_casualties,
+               (sum(casualties_car_van) - sum(ksi_adjusted_car_van))
+                   / (sum(casualties) - sum(ksi_adjusted))           as k_slight
         from read_parquet('{marts_dir}/agg_casualties_segment_year.parquet')
         where year between {BASELINE_YEARS[0]} and {BASELINE_YEARS[1]}
         group by 1
@@ -80,19 +81,20 @@ def worse(*labels: str) -> str:
 
 
 def run(distributions: dict[str, SpeedDistribution], baseline: pd.DataFrame, assumptions: Assumptions,
-        switched_off: float = ISA_SWITCHED_OFF_SHARE, overrides: dict[str, float] | None = None) -> pd.DataFrame:
+        isa: IsaUse | None = None) -> pd.DataFrame:
+    isa = IsaUse.central() if isa is None else isa
     rows = []
     for road in ROAD_TYPES:
         today = distributions[road.segment]
         base = baseline.loc[road.segment]
         slight = base["casualties"] - base["ksi"]
-        override = road.override_share if overrides is None else overrides[road.segment]
-        working = isa_working_share(road, switched_off, override)
+        held = held_to_limit(today, road, isa)
+        k = CarVanShares(fatal=base["k_fatal"], ksi=base["k_ksi"], slight=base["k_slight"])
         results = {}
         for policy in POLICIES:
-            after = apply_policy(policy, today, road, working)
+            after = apply_policy(policy, today, road, held)
             a = model_a(today, after, base["k_fatal"], base["k_casualties"], assumptions)
-            b = model_b(today, after, original_speeds(policy, today), road, base["k_ksi"], assumptions)
+            b = model_b(today, after, original_speeds(policy, today), road, k, assumptions)
             in_range = MODEL_A_RANGE_KMH[0] <= a["mean_change_kmh"] <= MODEL_A_RANGE_KMH[1]
             r = {
                 "segment": road.segment,

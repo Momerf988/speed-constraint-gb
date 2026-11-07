@@ -7,7 +7,7 @@ from model.params import load_parameters, require
 
 def test_file_loads_and_every_filled_row_parses():
     parameters = load_parameters()
-    assert len(parameters) == 27
+    assert len(parameters) == 30
     for p in parameters.values():
         if p.status != "to_extract":
             assert len(p.values) >= 1

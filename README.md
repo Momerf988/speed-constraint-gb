@@ -9,6 +9,10 @@ This project answers that with the government's own data and appraisal values: e
 police-reported injury collision since 1979, DfT traffic and speed statistics, and DfT's
 official values for a prevented casualty and for an hour of travel time.
 
+**Results under revision (November 2026):** an examiner-style review found specification errors in the
+casualty and appraisal models, including the "80 km/h cap fails" and "at least 125 deaths" claims. The RQ2–RQ4 numbers
+below are being re-run on the `paper-revision-1` branch; treat them as provisional until this note goes.
+
 **Status:** Phases 1–8 complete; Phase 9 under way (CI/CD done, Azure deployment next). All 37.5 million STATS19 rows (1979–2025) are loaded into
 PostgreSQL and modelled with dbt into a tested star schema, joined to DfT traffic and
 free-flow speed statistics. A casualty model in Python estimates the deaths and injuries each

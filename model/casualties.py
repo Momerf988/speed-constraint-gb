@@ -4,11 +4,17 @@ Model B, individual (the main model): each car's relative risk of a casualty cra
 a Kloeden speed-difference curve, where the difference is the car's speed minus the mean
 speed of traffic. Averaging over the speed distribution before and after a policy gives the
 change in crash involvement, rho. Only some casualties can respond:
-    k   the share in collisions involving a car, taxi or van (from STATS19, by road type)
-    f   the share of casualty crashes involving a free-travelling vehicle (Adelaide: 0.56)
-so KSI change by q_ksi = 1 - k * f * (1 - rho). Kloeden's crashes were ambulance cases, which
-ISA-UK treated as KSI. Deaths and slight injuries follow from q_ksi through the ratio of
-Elvik's (2009) road-user exponents: q_fatal = q_ksi ** (e_fatal / e_serious).
+    k   the share in collisions involving a car, taxi or van, by severity and road type (STATS19)
+    f   the share of casualty crashes with at least one free-travelling vehicle of any type:
+        0.56 in Adelaide's 60 km/h zones (CR 207, Section 3.7), an assumption of its authors, and
+        134 of 167 rural crashes (CR 204, Section 3.9). k and f restrict different things, so
+        neither counts the other: f covers trucks and motorcycles too, and k then keeps only the
+        collisions a car or van limiter can reach. Multiplying them treats the two as independent.
+so KSI change by q_ksi = 1 - k_ksi * f * (1 - rho). Kloeden's crashes were ambulance cases, which
+ISA-UK treated as KSI. The casualties that respond do so more steeply for deaths and less
+steeply for slight injuries, by the ratio of Elvik's (2009) road-user exponents:
+    q_fatal  = 1 - k_fatal  * f * (1 - rho ** (e_fatal  / e_serious))
+    q_slight = 1 - k_slight * f * (1 - rho ** (e_slight / e_serious))
 
 Which mean the difference is measured from after a policy is an assumption. Central: the new
 mean, as ISA-UK did. It is conservative, because the cars a policy slows are compared with
@@ -46,10 +52,19 @@ SEVERITY_EXPONENTS = {               # Elvik (2009) Table S.1, road-user rows
 
 
 @dataclass(frozen=True)
+class CarVanShares:
+    """k: the share of casualties, by severity, in collisions involving a car, taxi or van."""
+    fatal: float
+    ksi: float
+    slight: float
+
+
+@dataclass(frozen=True)
 class Assumptions:
     """Everything a single model run depends on. The Monte Carlo varies these."""
     reference_mean: str              # "new": dv from the mean after the policy; "old": from today's mean
-    free_travel_share: float         # f
+    free_travel_share: float         # f on urban roads
+    free_travel_share_rural: float   # f on rural roads
     power_exponent_fatal: float
     power_exponent_injury: float
     exponential_coef_fatal: float
@@ -61,10 +76,12 @@ class Assumptions:
     def central(cls) -> "Assumptions":
         """The central assumptions, read from the parameters file."""
         p = require("power_exponent_fatalities", "power_exponent_injury_crashes", "exponential_coef_fatalities",
-                    "exponential_coef_injury_crashes", "kloeden2002_free_speed_share_urban60")
+                    "exponential_coef_injury_crashes", "kloeden2002_free_speed_share_urban60",
+                    "kloeden2001_free_speed_share_rural")
         return cls(
             reference_mean="new",
             free_travel_share=p["kloeden2002_free_speed_share_urban60"].value,
+            free_travel_share_rural=p["kloeden2001_free_speed_share_rural"].value,
             power_exponent_fatal=p["power_exponent_fatalities"].value,
             power_exponent_injury=p["power_exponent_injury_crashes"].value,
             exponential_coef_fatal=p["exponential_coef_fatalities"].value,
@@ -109,7 +126,7 @@ def share_clamped(after: SpeedDistribution, before_speeds: np.ndarray, reference
 
 
 def model_b(today: SpeedDistribution, after: SpeedDistribution, before_speeds: np.ndarray, road: RoadType,
-            k_ksi: float, assumptions: Assumptions) -> dict[str, float] | None:
+            k: CarVanShares, assumptions: Assumptions) -> dict[str, float] | None:
     """KSI, fatal and slight ratios (after / today) under the individual model, or None without a curve."""
     if road.curve_id is None:
         return None
@@ -118,13 +135,13 @@ def model_b(today: SpeedDistribution, after: SpeedDistribution, before_speeds: n
     reference_after = reference_before if assumptions.reference_mean == "old" else after.mean()
     rho = (crash_involvement(after, reference_after, a, b, road.dv_range_kmh)
            / crash_involvement(today, reference_before, a, b, road.dv_range_kmh))
-    q_ksi = 1 - k_ksi * assumptions.free_travel_share * (1 - rho)
+    f = assumptions.free_travel_share if road.environment == "urban" else assumptions.free_travel_share_rural
     fatal_power, slight_power = severity_powers(road.environment)
     return {
         "rho": rho,
-        "ksi": q_ksi,
-        "fatal": q_ksi ** fatal_power,
-        "slight": q_ksi ** slight_power,
+        "ksi": 1 - k.ksi * f * (1 - rho),
+        "fatal": 1 - k.fatal * f * (1 - rho ** fatal_power),
+        "slight": 1 - k.slight * f * (1 - rho ** slight_power),
         "share_clamped": share_clamped(after, before_speeds, reference_before, reference_after, road.dv_range_kmh),
     }
 
