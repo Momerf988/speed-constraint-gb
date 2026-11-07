@@ -10,8 +10,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from model.casualties import Assumptions, CarVanShares, model_a, model_b, severity_powers
-from model.run import EVIDENCE_ORDER, run, worse
+from model.casualties import (ABSOLUTE_CURVE, Assumptions, CarVanShares, crash_involvement, curve_coefficients, model_a,
+                              model_b, severity_powers)
+from model.run import EVIDENCE_ORDER, evidence_label, run, worse
 from model.scenarios import (POLICIES, ROAD_TYPES, IsaUse, Traffic, apply_policy, fleet_after, fleet_before,
                              held_to_limit, isa_working_share, mixture, original_speeds)
 from model.speeds import MPH_TO_KMH, SpeedDistribution
@@ -230,6 +231,36 @@ def test_measuring_from_todays_mean_gives_the_larger_reduction():
     assert old["rho"] < new["rho"] < 1
 
 
+def test_measured_from_the_new_mean_a_uniform_slowdown_earns_no_credit():
+    slower = TODAY_48.shifted(-5.0, "everyone 5 km/h slower")
+    new = model_b(TODAY_48, slower, TODAY_48.speeds_kmh, URBAN_48, K, CENTRAL)
+    old = model_b(TODAY_48, slower, TODAY_48.speeds_kmh, URBAN_48, K, replace(CENTRAL, reference_mean="old"))
+    assert new["rho"] == pytest.approx(1)
+    assert old["rho"] < 1
+
+
+def test_the_absolute_curve_measures_from_60_kmh_and_stops_at_45_and_80():
+    today = uniform(30, 90)
+    after = apply_policy("compliance", today, URBAN_48, isa_working=0.665)
+    b = model_b(today, after, today.speeds_kmh, URBAN_48, K, replace(CENTRAL, reference_mean="absolute"))
+    a, c = curve_coefficients(ABSOLUTE_CURVE)
+    expected = (crash_involvement(after, 60.0, a, c, (-15.0, 20.0)) / crash_involvement(today, 60.0, a, c, (-15.0, 20.0)))
+    assert b["rho"] == pytest.approx(expected)
+    # Every speed below 45 km/h carries the same risk as 45 km/h, every speed above 80 the same as 80
+    assert crash_involvement(uniform(30, 35), 60.0, a, c, (-15.0, 20.0)) == pytest.approx(
+        crash_involvement(uniform(40, 45), 60.0, a, c, (-15.0, 20.0)))
+    assert crash_involvement(uniform(90, 95), 60.0, a, c, (-15.0, 20.0)) == pytest.approx(
+        crash_involvement(uniform(100, 105), 60.0, a, c, (-15.0, 20.0)))
+
+
+def test_the_absolute_curve_applies_only_to_urban_roads():
+    today = uniform(70, 110)
+    after = apply_policy("compliance", today, RURAL_97, isa_working=0.665)
+    absolute = model_b(today, after, today.speeds_kmh, RURAL_97, K, replace(CENTRAL, reference_mean="absolute"))
+    new = model_b(today, after, today.speeds_kmh, RURAL_97, K, CENTRAL)
+    assert absolute["rho"] == pytest.approx(new["rho"])
+
+
 def test_cars_slowed_far_below_the_mean_are_counted_as_clamped():
     today = uniform(70, 110)
     after = apply_policy("cap_48", today, RURAL_97, isa_working=0.665)
@@ -240,6 +271,23 @@ def test_cars_slowed_far_below_the_mean_are_counted_as_clamped():
 def test_motorways_have_no_individual_curve():
     today = uniform(90, 130)
     assert model_b(today, today, today.speeds_kmh, MOTORWAY, K, CENTRAL) is None
+
+
+def test_every_motorway_result_is_beyond_the_evidence():
+    distributions = {URBAN_32.segment: both(uniform(25, 45)), URBAN_48.segment: both(TODAY_48),
+                     RURAL_97.segment: both(uniform(70, 110)), MOTORWAY.segment: both(uniform(90, 130))}
+    baseline = pd.DataFrame({"killed": 100.0, "ksi": 1000.0, "casualties": 5000.0,
+                             "k_fatal": 0.9, "k_ksi": 0.9, "k_casualties": 0.9, "k_slight": 0.9},
+                            index=list(distributions))
+    table = run(distributions, baseline, CENTRAL).set_index(["segment", "policy"])
+    assert (table.xs(MOTORWAY.segment, level="segment")["evidence"] == "beyond").all()
+    assert table.loc[(RURAL_97.segment, "cap_97"), "evidence"] == "within"
+
+
+def test_a_rule_for_the_label():
+    assert evidence_label(False, False) == "beyond"
+    assert evidence_label(True, True) == "lower bound"
+    assert evidence_label(True, False) == "within"
 
 
 def test_worse_returns_the_weakest_evidence():
@@ -268,5 +316,6 @@ def test_monte_carlo_draws_are_reproducible_and_inside_their_ranges():
     for name, (low, high) in ASSUMPTION_RANGES.items():
         assert first[name].between(low, high).all()
     assert set(first["urban_curve"]) <= set(URBAN_CURVES)
+    assert first["power_exponent_fatal"].min() < 4.6 and first["power_exponent_injury"].min() < 3.4     # A7: aggregate bounds
     assert first["speed_control_share"].between(*SPEED_CONTROL_RANGE).all()
     assert first["warning_effect"].between(*WARNING_EFFECT_RANGE).all()

@@ -32,7 +32,7 @@ import pandas as pd
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from analysis.rq2_rq4 import COLOURS, GRID, INK, MUTED, POLICY_NAMES, SHOWN, SURFACE, colour
+from analysis.rq2_rq4 import COLOURS, GRID, INK, MUTED, POLICY_NAMES, SHOWN, SURFACE, colour, same_as_compliance
 from model.appraisal import (FREE_FLOW_RANGES, FREE_FLOW_SHARE, break_even_free_flow, capital_cost, casualty_benefit,
                              hours_lost_per_km, ksi_from_casualties, load_values, read_values, time_cost)
 from model.casualties import Assumptions
@@ -252,14 +252,16 @@ def print_findings(summary, values, traffic, ratios, baseline, compliance_all_ti
 
     print("1. Policies that cost no lawful time: every second they cost was gained by speeding (£m a year)")
     free = summary[~summary["costs_lawful_time"] & (summary["benefit"] > 0.5e6) & summary["policy"].isin(SHOWN)]
+    free = free[[not same_as_compliance(s, p) for s, p in zip(free["segment"], free["policy"])]]
     for _, r in free.iterrows():
-        label = "at least " if r["evidence_vs_bau"] == "lower bound" else ""
-        spread = "" if r["evidence_vs_bau"] == "lower bound" else f"  [{millions(r['benefit_p5'])} to {millions(r['benefit_p95'])}]"
-        print(f"   {r['segment']:28s} {POLICY_NAMES[r['policy']]:24s} benefit {label}{millions(r['benefit']):>5s}{spread}; "
+        note = {"lower bound": ", a lower bound", "beyond": ", beyond the evidence"}.get(r["evidence_vs_bau"], "")
+        print(f"   {r['segment']:28s} {POLICY_NAMES[r['policy']]:24s} benefit {millions(r['benefit']):>5s} "
+              f"[{millions(r['benefit_p5'])} to {millions(r['benefit_p95'])}]{note}; "
               f"of which fuel {millions(r['fuel_benefit'])}, carbon {millions(r['carbon_benefit'])}; "
               f"tax lost {millions(r['tax_lost'])}")
     compliance = free[free["policy"] == "compliance"]
-    print(f"   {'All four road types':28s} {POLICY_NAMES['compliance']:24s} benefit at least {millions(compliance['benefit'].sum())}")
+    print(f"   {'All four road types':28s} {POLICY_NAMES['compliance']:24s} benefit {millions(compliance['benefit'].sum())} "
+          f"[{millions(target['compliance_benefit_p5'])} to {millions(target['compliance_benefit_p95'])}]")
 
     print("\n2. Caps that cost lawful time, by road type (£m a year): central [5th to 95th percentile]")
     costly = summary[summary["costs_lawful_time"] & summary["policy"].isin(SHOWN)]
@@ -292,9 +294,8 @@ def print_findings(summary, values, traffic, ratios, baseline, compliance_all_ti
 
     print("\n3. If time gained by speeding were counted too: posted-limit compliance (£m a year)")
     for _, r in compliance_all_time.iterrows():
-        flag = "at least " if r["evidence_vs_bau"] == "lower bound" else ""
-        print(f"   {r['segment']:28s} benefit {flag}{millions(r['benefit']):>5s}, cost {millions(r['cost']):>5s}, "
-              f"net {flag}{millions(r['net']):>6s}, {pays_if(r['break_even_free_flow'])}")
+        print(f"   {r['segment']:28s} benefit {millions(r['benefit']):>5s}, cost {millions(r['cost']):>5s}, "
+              f"net {millions(r['net']):>6s}, {pays_if(r['break_even_free_flow'])}")
 
     print(f"\n4. {POLICY_NAMES[FOCUS[1]]} on {FOCUS[0]}: net benefit (£m a year), one assumption changed at a time")
     for _, r in sens.iterrows():
@@ -302,9 +303,9 @@ def print_findings(summary, values, traffic, ratios, baseline, compliance_all_ti
 
     print(f"\n5. Share of the 2035 target: {TARGET_CUT:.0%} fewer KSI than {target['baseline']:,.0f} a year "
           f"means {target['required']:,.0f} fewer a year")
-    for name, (ksi, p5, p95, note) in target["rows"].items():
-        spread = f" [{p5:,.0f} to {p95:,.0f}]" if pd.notna(p5) else ""
-        print(f"   {name:58s} {note}{ksi:6,.0f} KSI{spread} = {note}{ksi / target['required']:.0%} of the cut")
+    for name, (ksi, p5, p95) in target["rows"].items():
+        print(f"   {name:58s} {ksi:6,.0f} KSI [{p5:,.0f} to {p95:,.0f}] = {ksi / target['required']:.0%} of the cut")
+    print("   These are full-fleet steady states at 2022-2024 traffic and casualty levels, not forecasts for 2035.")
 
 
 def chart_bcr(summary: pd.DataFrame, path: Path) -> None:
@@ -457,18 +458,23 @@ def main() -> int:
     today_benefits = benefits(casualties, baseline, values, ratios, suffix="")
     bau = casualties["policy"].eq("bau_isa").to_numpy()
     compliance_mc = mc[mc["policy"] == "compliance"].groupby("draw")["ksi_prevented"].sum()
+    compliance_benefit_mc = mc[mc["policy"] == "compliance"].groupby("draw")["benefit"].sum()
+    bau_mc = draws[(draws["policy"] == "bau_isa") & draws["segment"].isin(FREE_FLOW_SHARE)].reset_index(drop=True)
+    bau_ksi_mc = benefits(bau_mc, baseline, values, ratios, suffix="").assign(draw=bau_mc["draw"]).groupby("draw")["ksi_prevented"].sum()
     focus_ksi = summary[(summary["segment"] == focus_road) & (summary["policy"] == FOCUS[1])]["ksi_prevented"].iloc[0]
     focus_ksi_mc = focus_mc["ksi_prevented"]
     baseline_ksi = baseline["ksi"].sum()
     target = {
         "baseline": baseline_ksi,
         "required": TARGET_CUT * baseline_ksi,
+        "compliance_benefit_p5": compliance_benefit_mc.quantile(0.05),
+        "compliance_benefit_p95": compliance_benefit_mc.quantile(0.95),
         "rows": {
-            "Business-as-usual ISA, against today": (today_benefits.loc[bau, "ksi_prevented"].sum(), np.nan, np.nan, "at least "),
+            "Business-as-usual ISA, against today": (today_benefits.loc[bau, "ksi_prevented"].sum(), *bau_ksi_mc.quantile([0.05, 0.95])),
             "Posted-limit compliance, beyond business as usual": (
-                summary[summary["policy"] == "compliance"]["ksi_prevented"].sum(), *compliance_mc.quantile([0.05, 0.95]), "at least "),
+                summary[summary["policy"] == "compliance"]["ksi_prevented"].sum(), *compliance_mc.quantile([0.05, 0.95])),
             f"{POLICY_NAMES[FOCUS[1]]} on {focus_road}, beyond business as usual": (
-                focus_ksi, *focus_ksi_mc.quantile([0.05, 0.95]), ""),
+                focus_ksi, *focus_ksi_mc.quantile([0.05, 0.95])),
         },
     }
 

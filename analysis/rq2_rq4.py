@@ -27,6 +27,7 @@ import pandas as pd
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from model.appraisal import SAME_SPEED_KMH
 from model.casualties import Assumptions
 from model.run import PREVENTED_COLUMNS, SAVED_COLUMNS, load_inputs, run, speed_distributions, worse
 from model.scenarios import ROAD_TYPES, IsaUse, apply_policy, held_to_limit
@@ -54,10 +55,14 @@ SUMMARY_COLUMNS = ["killed_prevented", "killed_prevented_vs_bau", "ksi_prevented
                    "casualties_prevented", "casualties_prevented_vs_bau"]
 
 # Published estimates the model is checked against
-ISA_UK_INJURY_REMAINING = {          # Tate and Carsten (2008): injury crashes left under mandatory ISA
-    "32 km/h roads": 0.37, "48 km/h roads": 0.60,
-    "97 km/h single carriageways": 0.86, "113 km/h motorways": 0.82,
+ISA_UK_INJURIES_PREVENTED = {        # Tate and Carsten (2008), Table 4: injury crashes prevented by mandatory ISA
+    "32 km/h roads": 1 - 0.371,      # with Taylor et al.'s U2, which this model does not have
+    "48 km/h roads": 1 - 0.604,      # with the absolute Kloeden urban curve
+    "97 km/h single carriageways": 1 - 0.861,    # with the Kloeden rural curve, from the new mean
+    "113 km/h motorways": 1 - 0.824,             # with Elvik et al.'s (2004) Power Model
 }
+CR204_COMPLIANCE = 0.238             # CR 204 Table 3.15: casualty crashes avoided, rural South Australia, total compliance
+CR204_80_LIMIT = 0.324               # the same table: 80 km/h maximum on undivided roads
 VADEBY_SHARE_OF_DEATHS = 0.25        # Vadeby (2023): full compliance in Sweden, Exponential model
 LAI_CHOSEN_TO_UNIVERSAL = 12 / 29    # Lai et al. (2012) via Day et al. (2023): serious injuries -12% vs -29%
 LAI_ADVISORY_TO_UNIVERSAL = 3 / 29   # the same source: advisory ISA, -3%
@@ -90,6 +95,14 @@ def totals(table: pd.DataFrame) -> pd.DataFrame:
     return summed.join(evidence).reset_index().assign(segment=ALL_ROADS)
 
 
+def same_as_compliance(segment: str, policy: str) -> bool:
+    """A cap that only rounds down the limit, like 48 km/h on 48.28 km/h roads, is compliance by another name."""
+    if not policy.startswith("cap_"):
+        return False
+    road = next(r for r in ROAD_TYPES if r.segment == segment)
+    return 0 <= road.limit_kmh - float(policy.removeprefix("cap_")) < SAME_SPEED_KMH
+
+
 def model_spread(row: pd.Series, suffix: str) -> tuple[float, float]:
     """Lowest and highest deaths prevented across Model B and both Model A forms."""
     values = [row[f"killed_prevented_{m}{suffix}"] for m in ("b", "power", "exp")]
@@ -98,16 +111,18 @@ def model_spread(row: pd.Series, suffix: str) -> tuple[float, float]:
 
 
 def describe(row: pd.Series, suffix: str = "_vs_bau") -> str:
-    """One result in words: a range for 'within', 'at least' for a lower bound, model spread beyond."""
+    """One result in words: a range, the lower-bound note, or the spread across models beyond the evidence."""
     evidence = row[f"evidence{suffix}" if suffix else "evidence"]
     central = row[f"killed_prevented{suffix}"]
     low, high = row[f"killed_prevented{suffix}_p5"], row[f"killed_prevented{suffix}_p95"]
     if abs(central) < 0.5 and abs(high) < 0.5:
-        return "    0  (no car is affected beyond business as usual)"
+        return "    0  (no vehicle is affected beyond business as usual)"
+    if row["segment"] == ALL_ROADS and row["policy"] in ("compliance", "bau_isa"):
+        return f"{central:5.0f}  [{low:4.0f} to {high:4.0f}], motorways beyond the evidence"
     if evidence == "within":
         return f"{central:5.0f}  [{low:4.0f} to {high:4.0f}]"
     if evidence == "lower bound":
-        return f"at least {central:.0f}  [{low:.0f} to {high:.0f}], the curve cut short"
+        return f"{central:5.0f}  [{low:4.0f} to {high:4.0f}], a lower bound: the curve stops short for over 10% of vehicles"
     spread_low, spread_high = model_spread(row, suffix)
     return f"beyond the evidence: models give {spread_low:.0f} to {spread_high:.0f}"
 
@@ -134,7 +149,8 @@ def print_findings(summary: pd.DataFrame, baseline: pd.DataFrame, sensitivity: p
     for segment, rows in summary.groupby("segment", sort=False):
         print(f"  {segment} (today {rows['baseline_killed'].iloc[0]:,.0f} deaths a year)")
         for _, row in rows.set_index("policy").loc[list(SHOWN)].reset_index().iterrows():
-            print(f"    {POLICY_NAMES[row['policy']]:28s}{describe(row)}")
+            if segment == ALL_ROADS or not same_as_compliance(segment, row["policy"]):
+                print(f"    {POLICY_NAMES[row['policy']]:28s}{describe(row)}")
 
     bau_total = summary[(summary["segment"] == ALL_ROADS) & (summary["policy"] == "bau_isa")].iloc[0]
     print(f"\n  Business-as-usual ISA itself, against today, on the four road types: {describe(bau_total, '').strip()}")
@@ -144,30 +160,35 @@ def print_findings(summary: pd.DataFrame, baseline: pd.DataFrame, sensitivity: p
     for name, rows in sensitivity.groupby("sensitivity", sort=False):
         rows = rows.set_index("policy")
         print(f"  {name:32s}" + "".join(f"{rows.loc[p, 'killed_prevented_vs_bau']:12.0f}" for p in SHOWN))
-    rows = sensitivity[sensitivity["sensitivity"] == "Central"].set_index("policy")
-    print(f"  {'Evidence':32s}" + "".join(f"{rows.loc[p, 'evidence_vs_bau']:>12s}" for p in SHOWN))
 
-    print("\nChecks against published estimates")
-    print(f"  {'':56s}{'ours':>8s}{'ours, f=1':>11s}{'published':>11s}")
+    print("\nChecks against published estimates: reductions, not shares remaining")
+    print(f"  {'':58s}{'ours':>8s}{'ours, f=1':>11s}{'published':>11s}")
     for _, row in validation.iterrows():
         f_one = "" if pd.isna(row["ours_f1"]) else f"{row['ours_f1']:.0%}"
-        print(f"  {row['check']:56s}{row['ours']:8.0%}{f_one:>11s}{row['published']:11.0%}   {row['source']}")
-    print("  f=1: every casualty in a car or van collision responds, not only the free-travel share")
+        print(f"  {row['check']:58s}{row['ours']:8.0%}{f_one:>11s}{row['published']:11.0%}   {row['source']}")
+    print("  f=1: every casualty in a car or van collision responds, not only the free-travel share.")
+    print("  No single value of f matches both ISA-UK, which applied its curves to all crashes, and Sweden.")
 
 
 def validate(central: pd.DataFrame, all_responding: pd.DataFrame, speed_control: pd.DataFrame,
-             warning_only: pd.DataFrame, baseline: pd.DataFrame) -> pd.DataFrame:
+             warning_only: pd.DataFrame, baseline: pd.DataFrame, absolute: pd.DataFrame,
+             absolute_all_responding: pd.DataFrame) -> pd.DataFrame:
     """The model's results next to the published figures they can be compared with.
 
     all_responding is the same run with f = 1, so the effect of the free-travel share is visible.
-    speed_control and warning_only are the same run with one kind of ISA in every car.
+    speed_control and warning_only are the same run with one kind of ISA in every car. absolute and
+    absolute_all_responding use the absolute urban curve, as ISA-UK did on 48 km/h roads.
     """
     def compliance(table):
         return table[table["policy"] == "compliance"].set_index("segment")
 
-    def injuries_left(table, segment):
+    def injuries_prevented(table, segment):
         r = compliance(table).loc[segment]
-        return 1 - r["casualties_prevented"] / r["baseline_casualties"]
+        return r["casualties_prevented"] / r["baseline_casualties"]
+
+    def ksi_prevented_share(table, segment, policy):
+        r = table[(table["segment"] == segment) & (table["policy"] == policy)].iloc[0]
+        return r["ksi_prevented_b"] / r["baseline_ksi"]
 
     def deaths_share(table):
         c = compliance(table)
@@ -179,10 +200,23 @@ def validate(central: pd.DataFrame, all_responding: pd.DataFrame, speed_control:
         curves = c["ksi_prevented_b"].notna()
         return bau.loc[curves, "ksi_prevented_b"].sum() / c.loc[curves, "ksi_prevented_b"].sum()
 
-    rows = [{"check": f"Injuries left at the limit, {segment}",
-             "ours": injuries_left(central, segment), "ours_f1": injuries_left(all_responding, segment),
+    rows = [{"check": f"Injuries prevented at the limit, {segment}",
+             "ours": injuries_prevented(central, segment), "ours_f1": injuries_prevented(all_responding, segment),
              "published": published, "source": "Tate and Carsten (2008), ISA-UK"}
-            for segment, published in ISA_UK_INJURY_REMAINING.items()]
+            for segment, published in ISA_UK_INJURIES_PREVENTED.items()]
+    rows.insert(2, {"check": "  the same, 48 km/h roads, with ISA-UK's absolute curve",
+                    "ours": injuries_prevented(absolute, "48 km/h roads"),
+                    "ours_f1": injuries_prevented(absolute_all_responding, "48 km/h roads"),
+                    "published": ISA_UK_INJURIES_PREVENTED["48 km/h roads"], "source": "Tate and Carsten (2008), ISA-UK"})
+    rural = "97 km/h single carriageways"
+    rows.append({"check": "KSI prevented at the limit, 97 km/h roads",
+                 "ours": ksi_prevented_share(central, rural, "compliance"),
+                 "ours_f1": ksi_prevented_share(all_responding, rural, "compliance"),
+                 "published": CR204_COMPLIANCE, "source": "Kloeden et al. (2001), casualty crashes, South Australia"})
+    rows.append({"check": "KSI prevented by an 80 km/h cap, 97 km/h roads",
+                 "ours": ksi_prevented_share(central, rural, "cap_80"),
+                 "ours_f1": ksi_prevented_share(all_responding, rural, "cap_80"),
+                 "published": CR204_80_LIMIT, "source": "Kloeden et al. (2001), 80 km/h limit, South Australia"})
     rows.append({"check": "Deaths prevented by full compliance (modelled roads)",
                  "ours": deaths_share(central), "ours_f1": deaths_share(all_responding),
                  "published": VADEBY_SHARE_OF_DEATHS, "source": "Vadeby (2023), Sweden"})
@@ -214,6 +248,7 @@ def validate(central: pd.DataFrame, all_responding: pd.DataFrame, speed_control:
 def chart_deaths(summary: pd.DataFrame, path: Path) -> None:
     """Deaths prevented beyond business-as-usual ISA, per road type and policy, with evidence shown."""
     shown = summary[summary["policy"].isin(SHOWN) & (summary["segment"] != ALL_ROADS)]
+    shown = shown[[not same_as_compliance(s, p) for s, p in zip(shown["segment"], shown["policy"])]]
     fig, ax = plt.subplots(figsize=(9, 8), facecolor=SURFACE)
     ax.set_facecolor(SURFACE)
     y, ticks, labels = 0, [], []
@@ -221,7 +256,7 @@ def chart_deaths(summary: pd.DataFrame, path: Path) -> None:
         ax.text(0, y - 0.15, segment, fontsize=10, fontweight="bold", color=INK, transform=ax.get_yaxis_transform(),
                 ha="left", va="bottom")
         y += 0.9
-        for _, row in rows.set_index("policy").loc[list(SHOWN)].reset_index().iterrows():
+        for _, row in rows.set_index("policy").reindex([p for p in SHOWN if p in set(rows["policy"])]).reset_index().iterrows():
             c = colour(row["policy"])
             if row["evidence_vs_bau"] == "beyond":
                 low, high = model_spread(row, "_vs_bau")
@@ -307,6 +342,7 @@ def main() -> int:
     sensitivities = {
         "Central": (distributions, central_assumptions, central_isa),
         "Difference from today's mean": (distributions, replace(central_assumptions, reference_mean="old"), central_isa),
+        "Absolute urban curve (ISA-UK)": (distributions, replace(central_assumptions, reference_mean="absolute"), central_isa),
         "Normal speed distribution": (speed_distributions(bands, "normal"), central_assumptions, central_isa),
         "Lognormal speed distribution": (speed_distributions(bands, "lognormal"), central_assumptions, central_isa),
         "Brenac's flatter curve": (distributions, replace(central_assumptions, urban_curve="brenac2015_exponential_coef",
@@ -332,7 +368,10 @@ def main() -> int:
                                                                free_travel_share_rural=1.0)),
                           run(distributions, baseline, central_assumptions, replace(central_isa, speed_control_share=1.0)),
                           run(distributions, baseline, central_assumptions, replace(central_isa, speed_control_share=0.0)),
-                          baseline)
+                          baseline,
+                          run(distributions, baseline, replace(central_assumptions, reference_mean="absolute")),
+                          run(distributions, baseline, replace(central_assumptions, reference_mean="absolute",
+                                                               free_travel_share=1.0, free_travel_share_rural=1.0)))
 
     summary.to_parquet(RESULTS / "casualty_model.parquet", index=False, compression="zstd")
     keep = ["draw", "segment", "policy", "mean_change_kmh", "evidence", "evidence_vs_bau",

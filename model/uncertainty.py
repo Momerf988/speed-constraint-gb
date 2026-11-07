@@ -5,8 +5,9 @@ results. The 5th to 95th percentile across draws is the range reported. Draws ar
 between two bounds, because the sources give bounds rather than distributions.
 
 What is drawn, and where each bound comes from (all in the parameters file or its notes):
-    Power exponent, fatal          4.6 to 6.7      Elvik (2009) rural; highest Elvik (2019) Table 5 fit
-    Power exponent, injury         3.4 to 4.2      Brenac et al. (2015); highest Table 5 fit
+    Power exponent, fatal          4.3 to 6.7      Elvik et al. (2019): fixed effects after trim-and-fill;
+                                                   highest Table 5 fit
+    Power exponent, injury         2.1 to 4.2      Elvik (2013); highest Elvik et al. (2019) Table 5 fit
     Exponential coef., fatal       0.069 to 0.086  Elvik (2013) fatal accidents; highest Table 5 fit
     Exponential coef., injury      0.034 to 0.067  Elvik (2013) injury crashes; highest Table 5 fit
     Free-travel share f, urban     0.40 to 0.70    Adelaide's 0.56, widened (a judgement): no GB figure exists
@@ -42,8 +43,8 @@ N_DRAWS = 10_000
 SEED = 20261030
 
 ASSUMPTION_RANGES = {              # names match the fields of Assumptions
-    "power_exponent_fatal": (4.6, 6.7),
-    "power_exponent_injury": (3.4, 4.2),
+    "power_exponent_fatal": (4.3, 6.7),
+    "power_exponent_injury": (2.1, 4.2),
     "exponential_coef_fatal": (0.069, 0.086),
     "exponential_coef_injury": (0.034, 0.067),
     "free_travel_share": (0.40, 0.70),

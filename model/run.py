@@ -9,9 +9,11 @@ The preferred estimate is Model B where the road type has an individual risk cur
 Power Model on motorways, which have none (as ISA-UK did).
 
 Evidence label of each row:
-    within        mean-speed change inside Model A's range, and Model B a point estimate
-    lower bound   inside Model A's range, but Model B cut short for over 10% of cars
-    beyond        mean-speed change outside -14 to +7 km/h, so every model extrapolates
+    within        Model A's fitted range holds, and Model B is a point estimate
+    lower bound   Model A's fitted range holds, but Model B is cut short for over 10% of vehicles
+    beyond        mean-speed change outside -14 to +7 km/h, or a starting mean above 95 km/h: every
+                  model extrapolates. Elvik et al. (2019) base their preferred values on initial speeds
+                  up to 95 km/h, so every motorway result is beyond the evidence, whatever its size.
 """
 
 from __future__ import annotations
@@ -23,7 +25,8 @@ import numpy as np
 import pandas as pd
 
 from model.appraisal import FUEL_YEAR, running_per_km
-from model.casualties import MAX_SHARE_CLAMPED, MODEL_A_RANGE_KMH, Assumptions, CarVanShares, model_a, model_b
+from model.casualties import (MAX_SHARE_CLAMPED, MODEL_A_MAX_INITIAL_KMH, MODEL_A_RANGE_KMH, Assumptions, CarVanShares,
+                              model_a, model_b)
 from model.scenarios import POLICIES, ROAD_TYPES, IsaUse, RoadType, Traffic, fleet_after, fleet_before
 from model.speeds import SpeedDistribution, band_intervals, empirical_distribution, fit, fitted_distribution
 
@@ -134,7 +137,8 @@ def run(distributions: dict[str, Traffic], baseline: pd.DataFrame, assumptions: 
             cars, vans, after = fleet_after(policy, traffic, road, isa)
             a = model_a(today, after, base["k_fatal"], base["k_casualties"], assumptions)
             b = model_b(today, after, fleet_before(policy, traffic), road, k, assumptions)
-            in_range = MODEL_A_RANGE_KMH[0] <= a["mean_change_kmh"] <= MODEL_A_RANGE_KMH[1]
+            in_range = (MODEL_A_RANGE_KMH[0] <= a["mean_change_kmh"] <= MODEL_A_RANGE_KMH[1]
+                        and today.mean() <= MODEL_A_MAX_INITIAL_KMH)
             r = {
                 "segment": road.segment,
                 "policy": policy,
