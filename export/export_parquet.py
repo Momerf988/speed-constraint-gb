@@ -35,6 +35,8 @@ TABLES = [
     "agg_casualties_year_road",
     "agg_rates_year_road_category",
     "agg_speed_bands_cars",
+    "agg_speed_bands_vans",
+    "agg_speed_summary_vans",
     "agg_casualties_segment_year",
     "agg_traffic_segment",
     "agg_collisions_per_casualty",

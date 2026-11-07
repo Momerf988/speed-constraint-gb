@@ -25,6 +25,23 @@ models:
                 quote: false
       - name: band_lower_mph
         data_tests: [not_null]
+  - name: stg_speed_bands_vans
+    description: Free-flow van speed bands from SPE0102, one row per year, road type and 5 mph band, where DfT publishes them (not on national-limit single carriageways).
+    columns:
+      - name: speed_limit_mph
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [20, 30, 70]
+                quote: false
+      - name: band_lower_mph
+        data_tests: [not_null]
+  - name: stg_speed_summary_vans
+    description: DfT's summary figures for vans from SPE0102, one row per year and road type.
+    columns:
+      - name: avg_free_flow_mph
+        data_tests: [not_null]
   - name: stg_traffic_vehicle_road_class
     description: DfT traffic by vehicle type (TRA0204), one row per year, road category and vehicle type. A roads' trunk and principal rows are added together; DfT's total rows are dropped.
     columns:

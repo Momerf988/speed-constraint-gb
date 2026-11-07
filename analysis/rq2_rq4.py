@@ -118,14 +118,15 @@ def print_findings(summary: pd.DataFrame, baseline: pd.DataFrame, sensitivity: p
     print(f"The four modelled road types have {deaths_modelled:,.0f} of {deaths_all:,.0f} deaths a year "
           f"({deaths_modelled / deaths_all:.0%}).\n")
 
-    print("Mean car speed in km/h, and % of cars over the limit")
+    print("Mean speed in km/h, and % over their own limit: cars, then vans")
     speeds = summary[summary["segment"] != ALL_ROADS]
-    print(f"  {'':30s}" + "".join(f"{SHORT_NAMES[p]:>18s}" for p in ("today", "bau_isa", "compliance", "cap_80")))
+    print(f"  {'':36s}" + "".join(f"{SHORT_NAMES[p]:>18s}" for p in ("today", "bau_isa", "compliance", "cap_80")))
     for segment, rows in speeds.groupby("segment", sort=False):
         rows = rows.set_index("policy")
-        cells = "".join(f"{rows.loc[p, 'mean_after_kmh']:9.1f} ({rows.loc[p, 'pct_over_limit_after']:3.0f}%)  "
-                        for p in ("today", "bau_isa", "compliance", "cap_80"))
-        print(f"  {segment:30s}{cells}")
+        for vehicle, name in (("car", "cars"), ("van", "vans")):
+            cells = "".join(f"{rows.loc[p, f'{vehicle}_mean_after_kmh']:9.1f} ({rows.loc[p, f'pct_{vehicle}s_over_limit_after']:3.0f}%)  "
+                            for p in ("today", "bau_isa", "compliance", "cap_80"))
+            print(f"  {segment + ', ' + name:36s}{cells}")
 
     print("\nDeaths prevented per year BEYOND business-as-usual ISA: central [5th to 95th percentile]")
     for segment, rows in summary.groupby("segment", sort=False):
@@ -253,7 +254,7 @@ def chart_deaths(summary: pd.DataFrame, path: Path) -> None:
 def chart_speeds(distributions: dict, path: Path) -> None:
     """Share of cars at or below each speed on 97 km/h single carriageways, under four policies."""
     road = next(r for r in ROAD_TYPES if r.segment == "97 km/h single carriageways")
-    today = distributions[road.segment]
+    today = distributions[road.segment].cars
     working = held_to_limit(today, road, IsaUse.central())
     fig, ax = plt.subplots(figsize=(8, 4.8), facecolor=SURFACE)
     ax.set_facecolor(SURFACE)
@@ -301,9 +302,13 @@ def main() -> int:
         "Override at random": (distributions, central_assumptions, replace(central_isa, override_targets_speeding=False)),
         "Speed control in every car": (distributions, central_assumptions, replace(central_isa, speed_control_share=1.0)),
         "Warning only in every car": (distributions, central_assumptions, replace(central_isa, speed_control_share=0.0)),
+        "ISA shows a van its own limit": (distributions, central_assumptions, replace(central_isa, vans_read_own_limit=True)),
     }
     sensitivity = pd.concat([totals(run(d, baseline, a, isa)).assign(sensitivity=name)
                              for name, (d, a, isa) in sensitivities.items()], ignore_index=True)
+    vans_like_cars = tuple(replace(road, van_limit_kmh=road.limit_kmh) for road in ROAD_TYPES)
+    sensitivity = pd.concat([sensitivity, totals(run(distributions, baseline, central_assumptions, central_isa, vans_like_cars))
+                             .assign(sensitivity="Vans have the car limit")], ignore_index=True)
 
     draws = monte_carlo(distributions, baseline, N_DRAWS, SEED)
     draws = pd.concat([draws, totals(draws)], ignore_index=True)

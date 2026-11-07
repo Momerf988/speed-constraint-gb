@@ -5,10 +5,11 @@ at TAG's average value of prevention per casualty, plus the police, insurance an
 damage costs that TAG values per collision, using STATS19's collisions per casualty.
 
 Cost: the extra hours car and van occupants spend on the road, valued at TAG's market-price
-value of time per vehicle-hour. A car loses 1/new speed - 1/old speed hours per km it drives.
+value of time per vehicle-hour. A vehicle loses 1/new speed - 1/old speed hours per km it drives.
 Only free-flowing traffic is slowed: in congestion, speeds are already below any cap. Following
 DfT practice (Carsten and Tate 2005; ISA-UK), time a driver gained by breaking the limit is not
-counted, so only lawful time lost is a cost. A sensitivity test counts all of it.
+counted, so only lawful time lost is a cost, each vehicle against its own limit: a van above
+80 km/h on a single carriageway was already breaking its limit. A sensitivity test counts all of it.
 
 Everything is per year, at 2022-2024 casualty and traffic levels, with every car fitted, in
 2023 prices and values (TAG data book v2.03, market prices). Because benefits and time costs
@@ -29,6 +30,7 @@ from model.speeds import SpeedDistribution
 
 VALUES_FILE = Path(__file__).resolve().parent / "parameters" / "appraisal_values.csv"
 SEVERITIES = ("fatal", "serious", "slight")
+SAME_SPEED_KMH = 0.5   # a km/h cap this close below an mph limit is that limit in practice (80 and 50 mph = 80.47)
 
 # Share of car and van km driven in free flow, where drivers choose their own speed. No
 # published source gives it, so these are stated judgements, drawn from wide ranges in the
@@ -109,29 +111,35 @@ def ksi_from_casualties(casualties_prevented, baseline_ksi: float, baseline_casu
     return casualties_prevented * baseline_ksi / baseline_casualties
 
 
-def hours_lost_per_km(policy: str, today: SpeedDistribution, road: RoadType, isa_working: float,
-                      count_speeding_time: bool = False) -> float:
+def hours_lost_per_km(policy: str, today: SpeedDistribution, road: RoadType, isa_working: float | np.ndarray,
+                      count_speeding_time: bool = False, vehicle: str = "car",
+                      limit_read: float | None = None) -> float:
     """Average extra hours per vehicle-km under a policy, compared with today's speeds.
 
     Lawful time only, by default: a car slowed from 110 to 80 km/h on a 97 km/h road loses
-    1/80 - 1/97 hours per km; the 1/97 - 1/110 it gained by speeding is not counted.
+    1/80 - 1/97 hours per km; the 1/97 - 1/110 it gained by speeding is not counted. A van
+    slowed from 90 to 80 km/h there loses none, because its limit is 80 km/h.
     """
-    after = apply_policy(policy, today, road, isa_working)
+    after = apply_policy(policy, today, road, isa_working, vehicle, limit_read)
     before = original_speeds(policy, today)
     if count_speeding_time:
         extra = 1 / after.speeds_kmh - 1 / before
     else:
-        extra = np.maximum(0.0, 1 / after.speeds_kmh - 1 / np.minimum(before, road.limit_kmh))
+        legal = road.legal_limit(vehicle)
+        extra = np.maximum(0.0, 1 / after.speeds_kmh - 1 / np.minimum(before, legal))
+        extra = np.where(after.speeds_kmh >= legal - SAME_SPEED_KMH, 0.0, extra)
     return float(np.sum(after.probabilities * extra))
 
 
-def time_cost(hours_per_km, car_billion_km: float, van_billion_km: float, values: Values, free_flow_share):
+def time_cost(car_hours_per_km, van_hours_per_km, car_billion_km: float, van_billion_km: float, values: Values,
+              free_flow_share):
     """£ a year of the time lost by the free-flowing share of car and van traffic."""
-    pounds_per_km = (car_billion_km * values.car_hour + van_billion_km * values.van_hour) * 1e9
-    return hours_per_km * free_flow_share * pounds_per_km
+    return (car_hours_per_km * car_billion_km * values.car_hour
+            + van_hours_per_km * van_billion_km * values.van_hour) * 1e9 * free_flow_share
 
 
-def break_even_free_flow(benefit, hours_per_km, car_billion_km: float, van_billion_km: float, values: Values):
+def break_even_free_flow(benefit, car_hours_per_km, van_hours_per_km, car_billion_km: float, van_billion_km: float,
+                         values: Values):
     """The free-flowing share of traffic at which time cost equals benefit (inf if no time is lost)."""
-    full = time_cost(hours_per_km, car_billion_km, van_billion_km, values, 1.0)
+    full = time_cost(car_hours_per_km, van_hours_per_km, car_billion_km, van_billion_km, values, 1.0)
     return np.divide(benefit, full, out=np.full_like(np.asarray(benefit, dtype=float), np.inf), where=np.asarray(full) > 0)

@@ -13,6 +13,7 @@ import pytest
 from model.appraisal import (VALUES_FILE, Values, break_even_free_flow, casualty_benefit, hours_lost_per_km,
                              ksi_from_casualties, load_values, read_values, time_cost, vehicle_hour_values)
 from model.scenarios import ROAD_TYPES
+from model.speeds import MPH_TO_KMH, SpeedDistribution
 from tests.test_scenarios import uniform
 
 URBAN_32, URBAN_48, RURAL_97, MOTORWAY = ROAD_TYPES
@@ -83,15 +84,43 @@ def test_lawful_time_lost_does_not_depend_on_how_often_isa_is_switched_off():
 
 
 def test_time_cost_scales_with_traffic_and_free_flow():
-    one = time_cost(1e-3, car_billion_km=2.0, van_billion_km=1.0, values=SIMPLE, free_flow_share=0.5)
+    one = time_cost(1e-3, 1e-3, car_billion_km=2.0, van_billion_km=1.0, values=SIMPLE, free_flow_share=0.5)
     assert one == pytest.approx(1e-3 * 0.5 * (2.0 * 10 + 1.0 * 20) * 1e9)
-    assert time_cost(1e-3, 2.0, 1.0, SIMPLE, 1.0) == pytest.approx(2 * one)
+    assert time_cost(1e-3, 1e-3, 2.0, 1.0, SIMPLE, 1.0) == pytest.approx(2 * one)
+
+
+def test_time_cost_charges_each_vehicle_its_own_hours():
+    assert time_cost(1e-3, 0.0, 2.0, 1.0, SIMPLE, 1.0) == pytest.approx(1e-3 * 2.0 * 10 * 1e9)
+    assert time_cost(0.0, 1e-3, 2.0, 1.0, SIMPLE, 1.0) == pytest.approx(1e-3 * 1.0 * 20 * 1e9)
+
+
+def at_one_speed(kmh: float) -> SpeedDistribution:
+    return SpeedDistribution(np.array([kmh]), np.array([1.0]), f"everyone at {kmh}")
+
+
+def test_under_an_80_cap_a_van_at_90_loses_no_lawful_time_and_a_car_does():
+    today = at_one_speed(90.0)
+    assert hours_lost_per_km("cap_80", today, RURAL_97, 0.0, vehicle="van") == 0
+    assert hours_lost_per_km("cap_80", today, RURAL_97, 0.0, vehicle="car") == pytest.approx(1 / 80 - 1 / 90)
+
+
+def test_a_van_loses_lawful_time_only_below_its_own_limit():
+    today = at_one_speed(90.0)
+    van_limit = 50 * MPH_TO_KMH
+    assert hours_lost_per_km("cap_60", today, RURAL_97, 0.0, vehicle="van") == pytest.approx(1 / 60 - 1 / van_limit)
+    assert hours_lost_per_km("compliance", today, RURAL_97, 0.0, vehicle="van") == 0
+    assert hours_lost_per_km("cap_80", at_one_speed(70.0), RURAL_97, 0.0, vehicle="van") == 0
+
+
+def test_a_cap_a_fraction_below_a_limit_is_that_limit_in_practice():
+    assert hours_lost_per_km("cap_48", at_one_speed(60.0), URBAN_48, 0.0) == 0     # 48 against 48.28 km/h
+    assert hours_lost_per_km("cap_48", at_one_speed(60.0), RURAL_97, 0.0) > 0
 
 
 def test_at_the_break_even_share_time_cost_equals_benefit():
-    share = break_even_free_flow(5e6, 1e-3, 2.0, 1.0, SIMPLE)
-    assert time_cost(1e-3, 2.0, 1.0, SIMPLE, share) == pytest.approx(5e6)
-    assert np.isinf(break_even_free_flow(5e6, 0.0, 2.0, 1.0, SIMPLE))
+    share = break_even_free_flow(5e6, 1e-3, 5e-4, 2.0, 1.0, SIMPLE)
+    assert time_cost(1e-3, 5e-4, 2.0, 1.0, SIMPLE, share) == pytest.approx(5e6)
+    assert np.isinf(break_even_free_flow(5e6, 0.0, 0.0, 2.0, 1.0, SIMPLE))
 
 
 @pytest.mark.skipif(not (RAW / "tag-data-book-v2-03.xlsm").exists(), reason="raw TAG data book not downloaded")

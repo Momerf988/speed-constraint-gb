@@ -12,9 +12,9 @@ import pytest
 
 from model.casualties import Assumptions, CarVanShares, model_a, model_b, severity_powers
 from model.run import EVIDENCE_ORDER, run, worse
-from model.scenarios import (POLICIES, ROAD_TYPES, IsaUse, apply_policy, held_to_limit, isa_working_share, mixture,
-                             original_speeds)
-from model.speeds import SpeedDistribution
+from model.scenarios import (POLICIES, ROAD_TYPES, IsaUse, Traffic, apply_policy, fleet_after, fleet_before,
+                             held_to_limit, isa_working_share, mixture, original_speeds)
+from model.speeds import MPH_TO_KMH, SpeedDistribution
 from model.uncertainty import ASSUMPTION_RANGES, SPEED_CONTROL_RANGE, URBAN_CURVES, WARNING_EFFECT_RANGE, draw
 
 URBAN_32, URBAN_48, RURAL_97, MOTORWAY = ROAD_TYPES
@@ -124,6 +124,52 @@ def test_rural_roads_use_the_rural_free_travel_share():
 CONTROL_ONLY = IsaUse(switched_off=0.3, speed_control_share=1.0, warning_effect=0.225)
 
 
+def both(dist: SpeedDistribution, van_share: float = 0.2) -> Traffic:
+    """Cars and vans with the same speeds."""
+    return Traffic(dist, dist, van_share)
+
+
+def test_only_single_carriageways_give_vans_a_lower_limit_than_cars():
+    assert RURAL_97.van_limit_kmh == pytest.approx(50 * MPH_TO_KMH)
+    for road in (URBAN_32, URBAN_48, MOTORWAY):
+        assert road.van_limit_kmh == road.limit_kmh
+    assert RURAL_97.legal_limit("car") == RURAL_97.limit_kmh
+    assert RURAL_97.legal_limit("van") == RURAL_97.van_limit_kmh
+
+
+def test_compliance_holds_each_vehicle_to_its_own_limit():
+    traffic = both(uniform(70, 110))
+    cars, vans, mixed = fleet_after("compliance", traffic, RURAL_97, CONTROL_ONLY)
+    assert cars.share_at_or_above(RURAL_97.limit_kmh + 0.05) == 0
+    assert cars.share_at_or_above(RURAL_97.van_limit_kmh + 0.05) > 0
+    assert vans.share_at_or_above(RURAL_97.van_limit_kmh + 0.05) == 0
+    assert mixed.mean() == pytest.approx(0.8 * cars.mean() + 0.2 * vans.mean())
+
+
+def test_isa_holds_a_van_to_the_posted_limit_unless_it_shows_the_vans_own():
+    traffic = both(uniform(70, 110))
+    _, reads_sign, _ = fleet_after("bau_isa", traffic, RURAL_97, CONTROL_ONLY)
+    _, reads_own, _ = fleet_after("bau_isa", traffic, RURAL_97, replace(CONTROL_ONLY, vans_read_own_limit=True))
+    assert reads_own.mean() < reads_sign.mean() < traffic.vans.mean()
+    between = (traffic.vans.speeds_kmh > RURAL_97.van_limit_kmh) & (traffic.vans.speeds_kmh <= RURAL_97.limit_kmh)
+    assert reads_sign.share_at_or_above(RURAL_97.van_limit_kmh + 0.05) >= traffic.vans.probabilities[between].sum()
+
+
+def test_mixed_traffic_lines_up_with_the_speeds_it_started_from():
+    traffic = Traffic(uniform(70, 110), uniform(65, 105), 0.2)
+    for policy in POLICIES:
+        _, _, mixed = fleet_after(policy, traffic, RURAL_97, CONTROL_ONLY)
+        before = fleet_before(policy, traffic)
+        assert len(before) == len(mixed.speeds_kmh)
+        assert np.all(mixed.speeds_kmh <= before)
+        assert mixed.probabilities.sum() == pytest.approx(1)
+
+
+def test_traffic_mixes_cars_and_vans_by_their_share_of_vehicle_km():
+    traffic = Traffic(uniform(80, 80.2), uniform(70, 70.2), 0.25)
+    assert traffic.mixed().mean() == pytest.approx(0.75 * 80.1 + 0.25 * 70.1, abs=0.01)
+
+
 def test_targeted_override_totals_the_trial_share_and_all_of_it_is_above_the_limit():
     held = held_to_limit(TODAY_48, URBAN_48, replace(CONTROL_ONLY, switched_off=0.0))
     overridden = 1 - held
@@ -202,8 +248,8 @@ def test_worse_returns_the_weakest_evidence():
 
 
 def test_a_full_run_measures_every_policy_against_today_and_bau():
-    distributions = {URBAN_32.segment: uniform(25, 45), URBAN_48.segment: TODAY_48,
-                     RURAL_97.segment: uniform(70, 110), MOTORWAY.segment: uniform(90, 130)}
+    distributions = {URBAN_32.segment: both(uniform(25, 45)), URBAN_48.segment: both(TODAY_48),
+                     RURAL_97.segment: both(uniform(70, 110)), MOTORWAY.segment: both(uniform(90, 130))}
     baseline = pd.DataFrame({"killed": 100.0, "ksi": 1000.0, "casualties": 5000.0,
                              "k_fatal": 0.9, "k_ksi": 0.9, "k_casualties": 0.9, "k_slight": 0.9},
                             index=list(distributions))

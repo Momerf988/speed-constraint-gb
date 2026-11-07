@@ -16,12 +16,14 @@ Evidence label of each row:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import duckdb
 import numpy as np
 import pandas as pd
 
 from model.casualties import MAX_SHARE_CLAMPED, MODEL_A_RANGE_KMH, Assumptions, CarVanShares, model_a, model_b
-from model.scenarios import POLICIES, ROAD_TYPES, IsaUse, apply_policy, held_to_limit, original_speeds
+from model.scenarios import POLICIES, ROAD_TYPES, IsaUse, RoadType, Traffic, fleet_after, fleet_before
 from model.speeds import SpeedDistribution, band_intervals, empirical_distribution, fit, fitted_distribution
 
 BASELINE_YEARS = (2022, 2024)   # the Road Safety Strategy's own baseline
@@ -34,11 +36,28 @@ PREVENTED_COLUMNS = (
 )
 
 
-def load_inputs(marts_dir) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Speed bands for SPEED_YEAR, and annual baseline casualties with car/van shares per road type."""
-    bands = duckdb.sql(f"""
-        select * from read_parquet('{marts_dir}/agg_speed_bands_cars.parquet') where year = {SPEED_YEAR}
+@dataclass(frozen=True)
+class SpeedInputs:
+    """What DfT publishes about speeds for SPEED_YEAR, plus vans' share of car and van vehicle-km."""
+    car_bands: pd.DataFrame
+    van_bands: pd.DataFrame
+    van_summary: pd.DataFrame
+    van_shares: dict[str, float]
+
+
+def load_inputs(marts_dir) -> tuple[SpeedInputs, pd.DataFrame]:
+    """Speed inputs, and annual baseline casualties with car/van shares per road type."""
+    def table(name):
+        return duckdb.sql(f"select * from read_parquet('{marts_dir}/{name}.parquet') where year = {SPEED_YEAR}").df()
+
+    shares = duckdb.sql(f"""
+        select segment, sum(van_billion_vehicle_km) / sum(car_billion_vehicle_km + van_billion_vehicle_km) as van_share
+        from read_parquet('{marts_dir}/agg_traffic_segment.parquet')
+        where year between {BASELINE_YEARS[0]} and {BASELINE_YEARS[1]}
+        group by 1
     """).df()
+    speeds = SpeedInputs(table("agg_speed_bands_cars"), table("agg_speed_bands_vans"), table("agg_speed_summary_vans"),
+                         dict(zip(shares["segment"], shares["van_share"])))
     years = BASELINE_YEARS[1] - BASELINE_YEARS[0] + 1
     baseline = duckdb.sql(f"""
         select segment,
@@ -54,19 +73,35 @@ def load_inputs(marts_dir) -> tuple[pd.DataFrame, pd.DataFrame]:
         where year between {BASELINE_YEARS[0]} and {BASELINE_YEARS[1]}
         group by 1
     """).df().set_index("segment")
-    return bands, baseline
+    return speeds, baseline
 
 
-def speed_distributions(bands: pd.DataFrame, shape: str = "empirical") -> dict[str, SpeedDistribution]:
-    """Today's speed distribution on each modelled road type: empirical, normal or lognormal."""
-    distributions = {}
+def speed_distribution(bands: pd.DataFrame, shape: str, label: str) -> SpeedDistribution:
+    """One vehicle type on one road type: empirical, normal or lognormal."""
+    intervals, _ = band_intervals(bands)
+    return (empirical_distribution(intervals, label) if shape == "empirical"
+            else fitted_distribution(shape, *fit(intervals, shape), label))
+
+
+def speed_distributions(speeds: SpeedInputs, shape: str = "empirical") -> dict[str, Traffic]:
+    """Today's cars and vans on each modelled road type.
+
+    DfT publishes no van bands on national-limit single carriageways, because its counters cannot
+    tell which limit a van has (SPE0102 note 6), only their average speed. There the vans take the
+    car distribution, moved to the van average.
+    """
+    traffic = {}
     for road in ROAD_TYPES:
-        intervals, _ = band_intervals(bands[bands["road_type"] == road.dft_road_type])
-        distributions[road.segment] = (
-            empirical_distribution(intervals, road.segment) if shape == "empirical"
-            else fitted_distribution(shape, *fit(intervals, shape), road.segment)
-        )
-    return distributions
+        cars = speed_distribution(speeds.car_bands[speeds.car_bands["road_type"] == road.dft_road_type], shape,
+                                  f"{road.segment}, cars")
+        van_bands = speeds.van_bands[speeds.van_bands["road_type"] == road.dft_road_type]
+        if len(van_bands):
+            vans = speed_distribution(van_bands, shape, f"{road.segment}, vans")
+        else:
+            summary = speeds.van_summary[speeds.van_summary["road_type"] == road.dft_road_type].iloc[0]
+            vans = cars.shifted(summary["van_avg_free_flow_kmh"] - summary["car_avg_free_flow_kmh"], f"{road.segment}, vans")
+        traffic[road.segment] = Traffic(cars, vans, speeds.van_shares[road.segment])
+    return traffic
 
 
 def evidence_label(model_a_in_range: bool, model_b_lower_bound: bool) -> str:
@@ -80,21 +115,21 @@ def worse(*labels: str) -> str:
     return max(labels, key=EVIDENCE_ORDER.index)
 
 
-def run(distributions: dict[str, SpeedDistribution], baseline: pd.DataFrame, assumptions: Assumptions,
-        isa: IsaUse | None = None) -> pd.DataFrame:
+def run(distributions: dict[str, Traffic], baseline: pd.DataFrame, assumptions: Assumptions,
+        isa: IsaUse | None = None, roads: tuple[RoadType, ...] = ROAD_TYPES) -> pd.DataFrame:
     isa = IsaUse.central() if isa is None else isa
     rows = []
-    for road in ROAD_TYPES:
-        today = distributions[road.segment]
+    for road in roads:
+        traffic = distributions[road.segment]
+        today = traffic.mixed()
         base = baseline.loc[road.segment]
         slight = base["casualties"] - base["ksi"]
-        held = held_to_limit(today, road, isa)
         k = CarVanShares(fatal=base["k_fatal"], ksi=base["k_ksi"], slight=base["k_slight"])
         results = {}
         for policy in POLICIES:
-            after = apply_policy(policy, today, road, held)
+            cars, vans, after = fleet_after(policy, traffic, road, isa)
             a = model_a(today, after, base["k_fatal"], base["k_casualties"], assumptions)
-            b = model_b(today, after, original_speeds(policy, today), road, k, assumptions)
+            b = model_b(today, after, fleet_before(policy, traffic), road, k, assumptions)
             in_range = MODEL_A_RANGE_KMH[0] <= a["mean_change_kmh"] <= MODEL_A_RANGE_KMH[1]
             r = {
                 "segment": road.segment,
@@ -102,7 +137,10 @@ def run(distributions: dict[str, SpeedDistribution], baseline: pd.DataFrame, ass
                 "mean_before_kmh": today.mean(),
                 "mean_after_kmh": after.mean(),
                 "mean_change_kmh": a["mean_change_kmh"],
-                "pct_over_limit_after": 100 * after.share_at_or_above(road.limit_kmh + 0.05),
+                "car_mean_after_kmh": cars.mean(),
+                "van_mean_after_kmh": vans.mean(),
+                "pct_cars_over_limit_after": 100 * cars.share_at_or_above(road.limit_kmh + 0.05),
+                "pct_vans_over_limit_after": 100 * vans.share_at_or_above(road.van_limit_kmh + 0.05),
                 "share_clamped": np.nan if b is None else b["share_clamped"],
                 "evidence": evidence_label(in_range, b is not None and b["share_clamped"] > MAX_SHARE_CLAMPED),
                 "preferred_model": "power" if b is None else "b",

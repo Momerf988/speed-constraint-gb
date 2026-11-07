@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 from scipy import stats
 
-from model.speeds import Interval, band_intervals, empirical_distribution, fit
+from model.speeds import Interval, SpeedDistribution, band_intervals, empirical_distribution, fit
 
 EDGES = np.arange(40.0, 130.0, 8.0)  # bands 8 km/h wide, like 5 mph
 
@@ -66,3 +66,9 @@ def test_low_bands_get_the_mass_dft_published():
     assert low["top_low_pct"] == pytest.approx(2.0)
     assert low["bottom_low_pct"] == pytest.approx(1.0)
     assert sum(i.share for i in intervals) == pytest.approx(1.0)
+
+def test_shifting_moves_every_vehicle_and_keeps_the_shape():
+    today = SpeedDistribution(np.array([50.0, 60.0]), np.array([0.5, 0.5]), "two speeds")
+    moved = today.shifted(-0.5, "moved")
+    assert moved.mean() == pytest.approx(today.mean() - 0.5)
+    np.testing.assert_array_equal(moved.probabilities, today.probabilities)

@@ -117,6 +117,10 @@ class SpeedDistribution:
         """The average of function(speed) over all vehicles."""
         return float(np.sum(function(self.speeds_kmh) * self.probabilities))
 
+    def shifted(self, gap_kmh: float, label: str) -> "SpeedDistribution":
+        """The same shape, every vehicle gap_kmh faster."""
+        return SpeedDistribution(self.speeds_kmh + gap_kmh, self.probabilities, label)
+
     def capped(self, cap_kmh: float, label: str | None = None) -> "SpeedDistribution":
         """Every vehicle faster than the cap now drives at the cap; nobody else changes."""
         return SpeedDistribution(np.minimum(self.speeds_kmh, cap_kmh), self.probabilities,

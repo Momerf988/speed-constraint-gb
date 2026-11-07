@@ -99,19 +99,25 @@ def benefits(table: pd.DataFrame, baseline: pd.DataFrame, values, ratios, includ
     return out
 
 
-def hours_table(distributions, count_speeding_time=False) -> pd.DataFrame:
-    """Hours lost per vehicle-km beyond business-as-usual ISA, per road type and policy.
+def hours_table(distributions, count_speeding_time=False, roads=ROAD_TYPES, isa=None) -> pd.DataFrame:
+    """Hours lost per car-km and per van-km beyond business-as-usual ISA, per road type and policy.
 
-    Lawful hours do not depend on how often ISA is switched off or overridden: a cap below the
-    limit binds every car, and a cap above it costs no lawful time. So the central share serves
-    every Monte Carlo draw.
+    Lawful hours do not depend on how often ISA is switched off or overridden: a cap below a
+    vehicle's limit binds it whatever ISA does, and a cap above costs no lawful time. So the central
+    shares serve every Monte Carlo draw.
     """
+    isa = IsaUse.central() if isa is None else isa
     rows = []
-    for road in ROAD_TYPES:
-        today = distributions[road.segment]
-        working = held_to_limit(today, road, IsaUse.central())
-        lost = {p: hours_lost_per_km(p, today, road, working, count_speeding_time) for p in POLICIES}
-        rows += [{"segment": road.segment, "policy": p, "hours_per_km": lost[p] - lost["bau_isa"]} for p in POLICIES]
+    for road in roads:
+        traffic = distributions[road.segment]
+        lost = {}
+        for vehicle, today in (("car", traffic.cars), ("van", traffic.vans)):
+            working = held_to_limit(today, road, isa, vehicle)
+            lost[vehicle] = {p: hours_lost_per_km(p, today, road, working, count_speeding_time, vehicle,
+                                                  isa.limit_read(road, vehicle)) for p in POLICIES}
+        rows += [{"segment": road.segment, "policy": p,
+                  "car_hours_per_km": lost["car"][p] - lost["car"]["bau_isa"],
+                  "van_hours_per_km": lost["van"][p] - lost["van"]["bau_isa"]} for p in POLICIES]
     return pd.DataFrame(rows)
 
 
@@ -126,11 +132,14 @@ def appraise(casualties: pd.DataFrame, hours: pd.DataFrame, traffic, baseline, v
         free_flow = FREE_FLOW_SHARE
     share = free_flow if isinstance(free_flow, pd.Series) else table["segment"].map(free_flow)
     table["free_flow_share"] = share
-    table["time_cost"] = time_cost(table["hours_per_km"], cars, vans, values, share)
+    table["costs_lawful_time"] = table["car_hours_per_km"] + table["van_hours_per_km"] > 1e-12
+    table["time_cost"] = time_cost(table["car_hours_per_km"], table["van_hours_per_km"], cars, vans, values, share)
+    table["van_time_cost"] = time_cost(0.0, table["van_hours_per_km"], cars, vans, values, share)
     table["net"] = table["benefit"] - table["time_cost"]
     table["bcr"] = np.where(table["time_cost"] > 0, table["benefit"] / table["time_cost"].where(table["time_cost"] > 0), np.inf)
-    table["break_even_free_flow"] = break_even_free_flow(table["benefit"].to_numpy(), table["hours_per_km"].to_numpy(),
-                                                         cars.to_numpy(), vans.to_numpy(), values)
+    table["break_even_free_flow"] = break_even_free_flow(table["benefit"].to_numpy(), table["car_hours_per_km"].to_numpy(),
+                                                         table["van_hours_per_km"].to_numpy(), cars.to_numpy(),
+                                                         vans.to_numpy(), values)
     for model in MODELS:
         table[f"bcr_{model}"] = table[f"benefit_{model}"] / table["time_cost"].where(table["time_cost"] > 0)
     return table
@@ -151,8 +160,9 @@ def summarise(central: pd.DataFrame, mc: pd.DataFrame) -> pd.DataFrame:
     q = mc.groupby(keys, sort=False)[["benefit", "time_cost", "net", "bcr"]].quantile([0.05, 0.5, 0.95]).unstack()
     q.columns = [f"{column}_p{round(p * 100)}" for column, p in q.columns]
     q["chance_net_positive"] = mc.assign(pays=mc["net"] > 0).groupby(keys, sort=False)["pays"].mean()
-    keep = ["segment", "policy", "evidence_vs_bau", "hours_per_km", "free_flow_share", "ksi_prevented",
-            "benefit", "benefit_b", "benefit_power", "benefit_exp", "time_cost", "net", "bcr", "bcr_b",
+    keep = ["segment", "policy", "evidence_vs_bau", "car_hours_per_km", "van_hours_per_km", "costs_lawful_time",
+            "free_flow_share", "ksi_prevented",
+            "benefit", "benefit_b", "benefit_power", "benefit_exp", "time_cost", "van_time_cost", "net", "bcr", "bcr_b",
             "bcr_power", "bcr_exp", "break_even_free_flow"]
     return central[keep].merge(q.reset_index(), on=keys, how="left")
 
@@ -196,7 +206,7 @@ def print_findings(summary, values, traffic, ratios, baseline, compliance_all_ti
           "70% on 97 km/h roads and motorways\n")
 
     print("1. Policies that cost no lawful time: every second they cost was gained by speeding (£m a year)")
-    free = summary[(summary["hours_per_km"] <= 1e-12) & (summary["benefit"] > 0.5e6) & summary["policy"].isin(SHOWN)]
+    free = summary[~summary["costs_lawful_time"] & (summary["benefit"] > 0.5e6) & summary["policy"].isin(SHOWN)]
     for _, r in free.iterrows():
         label = "at least " if r["evidence_vs_bau"] == "lower bound" else ""
         spread = "" if r["evidence_vs_bau"] == "lower bound" else f"  [{millions(r['benefit_p5'])} to {millions(r['benefit_p95'])}]"
@@ -205,7 +215,7 @@ def print_findings(summary, values, traffic, ratios, baseline, compliance_all_ti
     print(f"   {'All four road types':28s} {POLICY_NAMES['compliance']:24s} benefit at least {millions(compliance['benefit'].sum())}")
 
     print("\n2. Caps that cost lawful time (£m a year): central [5th to 95th percentile]")
-    costly = summary[(summary["hours_per_km"] > 1e-12) & summary["policy"].isin(SHOWN)]
+    costly = summary[summary["costs_lawful_time"] & summary["policy"].isin(SHOWN)]
     for _, r in costly.iterrows():
         head = f"   {r['segment']:28s} {POLICY_NAMES[r['policy']]:16s}"
         if r["evidence_vs_bau"] == "within":
@@ -238,7 +248,7 @@ def print_findings(summary, values, traffic, ratios, baseline, compliance_all_ti
 
 def chart_bcr(summary: pd.DataFrame, path: Path) -> None:
     """Benefit-cost ratio of every cap that costs lawful time, with the evidence shown."""
-    rows = summary[(summary["hours_per_km"] > 1e-12) & summary["policy"].isin(SHOWN)].reset_index(drop=True)
+    rows = summary[summary["costs_lawful_time"] & summary["policy"].isin(SHOWN)].reset_index(drop=True)
     fig, ax = plt.subplots(figsize=(10, 5.2), facecolor=SURFACE)
     ax.set_facecolor(SURFACE)
     labels = []
@@ -331,6 +341,8 @@ def main() -> int:
     low_flow, high_flow = FREE_FLOW_RANGES[focus_road]
     central_flow = FREE_FLOW_SHARE[focus_road]
 
+    vans_like_cars = tuple(replace(road, van_limit_kmh=road.limit_kmh) for road in ROAD_TYPES)
+
     def benefit_under(assumptions):
         return focus_row(appraise(run(distributions, baseline, assumptions), hours, traffic, baseline, values, ratios))["benefit"]
 
@@ -352,6 +364,11 @@ def main() -> int:
             focus_row(appraise(casualties, hours, traffic, baseline, values, ratios, include_unreported=True))["benefit"],
             focus["time_cost"]),
         "Time gained by speeding counted": (focus["benefit"], focus_row(all_time)["time_cost"]),
+        "Vans have the car limit": (focus_row(appraise(run(distributions, baseline, central_assumptions, roads=vans_like_cars),
+                                                       hours_table(distributions, roads=vans_like_cars), traffic, baseline,
+                                                       values, ratios))["benefit"],
+                                    focus_row(appraise(casualties, hours_table(distributions, roads=vans_like_cars), traffic,
+                                                       baseline, values, ratios))["time_cost"]),
     })
 
     # Share of the 2035 target. BAU ISA is measured against today; the others against BAU ISA.
