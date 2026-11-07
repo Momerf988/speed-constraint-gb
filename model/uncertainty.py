@@ -1,8 +1,10 @@
 """Monte Carlo: how far the casualty results move across the values the sources allow.
 
 Each draw picks every uncertain input at random, runs the whole model once and keeps the
-results. The 5th to 95th percentile across draws is the range reported. Draws are uniform
-between two bounds, because the sources give bounds rather than distributions.
+results. The 5th to 95th percentile across draws is the range reported. It is parameter
+uncertainty under the central model, not a bound on the truth: the choices between models
+are in analysis/structural.py. Draws are uniform between two bounds, because the sources give
+bounds rather than distributions.
 
 What is drawn, and where each bound comes from (all in the parameters file or its notes):
     Power exponent, fatal          4.3 to 6.7      Elvik et al. (2019): fixed effects after trim-and-fill;
@@ -18,13 +20,16 @@ What is drawn, and where each bound comes from (all in the parameters file or it
     Warning effect, kappa          0.20 to 0.36    TRL (2024) Table 34: advisory / voluntary, by severity
     ISA overridden, by road type   +/- 5 points    around the ISA-UK trial shares (Lai and Carsten 2012)
     Urban curve                    one of four     Kloeden (2002) refits for case-speed errors of 0-7.5 km/h
+    Deaths / KSI power, urban      1.0 to 2.0      a judgement, around Elvik's (2009) 3.0 / 2.0 = 1.5
+    Deaths / KSI power, rural      1.0 to 1.6      a judgement, around Elvik's (2009) 4.6 / 3.5 = 1.31
+        Elvik's urban fatality interval runs from -0.5 to 6.5, so drawing the exponents themselves
+        would let a slower speed raise deaths. At 1.0, deaths fall in step with KSI.
 
 Not drawn:
-    Elvik's (2009) severity exponents stay at their best estimates. The urban fatality interval
-    runs from -0.5 to 6.5, so drawing from it would let a slower speed raise deaths.
-    Which mean speed differences are measured from, the shape of the speed distribution and
-    Brenac's flatter curve are choices between models, not values within one. They are tested
-    one at a time (analysis/rq2_rq4.py), so it stays visible which choice moves the answer.
+    Which mean speed differences are measured from, the shape of the speed distribution, Brenac's
+    flatter curve, Model A in place of Model B and random override are choices between models,
+    not values within one. They are tested one at a time (analysis/structural.py), so it stays
+    visible which choice moves the answer.
 """
 
 from __future__ import annotations
@@ -49,6 +54,8 @@ ASSUMPTION_RANGES = {              # names match the fields of Assumptions
     "exponential_coef_injury": (0.034, 0.067),
     "free_travel_share": (0.40, 0.70),
     "free_travel_share_rural": (0.60, 0.90),
+    "urban_fatal_ratio": (1.0, 2.0),
+    "rural_fatal_ratio": (1.0, 1.6),
 }
 SWITCHED_OFF_RANGE = (0.10, 0.50)
 SPEED_CONTROL_RANGE = (0.0, 1.0)

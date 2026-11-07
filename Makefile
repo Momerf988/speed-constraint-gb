@@ -1,4 +1,4 @@
-.PHONY: setup ingest db transform docs export rq1 test speeds rq2 values rq3 wales tune severity holdout sample
+.PHONY: setup ingest db transform docs export rq1 test speeds rq2 values rq3 structural wales tune severity holdout sample
 
 # Create the Python environment from pyproject.toml.
 setup:
@@ -55,6 +55,10 @@ values:
 # Phase 7: RQ3 cost-benefit appraisal, written to results/ and figures/.
 rq3:
 	uv run python -m analysis.rq3
+
+# Paper revision: every headline with its central value, Monte Carlo range and structural range. Run after rq2 and rq3.
+structural:
+	uv run python -m analysis.structural
 
 # Phase 8: Wales 32 km/h default, difference-in-differences against England, written to results/ and figures/.
 wales:

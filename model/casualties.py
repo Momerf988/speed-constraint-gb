@@ -81,6 +81,8 @@ class Assumptions:
     exponential_coef_injury: float
     urban_curve: str
     rural_curve: str
+    urban_fatal_ratio: float         # e_fatal / e_serious on urban roads
+    rural_fatal_ratio: float         # e_fatal / e_serious on rural roads
 
     @classmethod
     def central(cls) -> "Assumptions":
@@ -98,6 +100,8 @@ class Assumptions:
             exponential_coef_injury=p["exponential_coef_injury_crashes"].value,
             urban_curve="kloeden2002_urban_difference",
             rural_curve="kloeden2001_rural_difference",
+            urban_fatal_ratio=severity_powers("urban")[0],
+            rural_fatal_ratio=severity_powers("rural")[0],
         )
 
 
@@ -150,7 +154,8 @@ def model_b(today: SpeedDistribution, after: SpeedDistribution, before_speeds: n
     rho = (crash_involvement(after, reference_after, a, b, dv_range)
            / crash_involvement(today, reference_before, a, b, dv_range))
     f = assumptions.free_travel_share if road.environment == "urban" else assumptions.free_travel_share_rural
-    fatal_power, slight_power = severity_powers(road.environment)
+    fatal_power = assumptions.urban_fatal_ratio if road.environment == "urban" else assumptions.rural_fatal_ratio
+    _, slight_power = severity_powers(road.environment)
     return {
         "rho": rho,
         "ksi": 1 - k.ksi * f * (1 - rho),

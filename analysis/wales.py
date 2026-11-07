@@ -118,7 +118,7 @@ def chart(studies: dict[str, pd.DataFrame], path: Path) -> None:
     fig.text(0.01, 0.01, "Dot: Poisson rate ratio with force and month fixed effects. Line: 95% interval, "
              "clustered by police force (only 4 Welsh forces, so treat as indicative).", fontsize=7.5, color=MUTED)
     fig.tight_layout(rect=(0, 0.03, 1, 1))
-    fig.savefig(path, dpi=150, facecolor=SURFACE)
+    fig.savefig(path, dpi=300, facecolor=SURFACE)
     plt.close(fig)
 
 

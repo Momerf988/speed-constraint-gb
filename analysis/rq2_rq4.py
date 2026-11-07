@@ -41,8 +41,8 @@ FIGURES = ROOT / "figures"
 ALL_ROADS = "all four road types"
 POLICY_NAMES = {
     "today": "Today",
-    "bau_isa": "Business as usual (overridable ISA)",
-    "compliance": "Posted-limit compliance",
+    "bau_isa": "Business as usual (mandated ISA)",
+    "compliance": "Legal-limit compliance",
     "cap_97": "Cap at 97 km/h",
     "cap_80": "Cap at 80 km/h",
     "cap_60": "Cap at 60 km/h",
@@ -249,6 +249,7 @@ def chart_deaths(summary: pd.DataFrame, path: Path) -> None:
     """Deaths prevented beyond business-as-usual ISA, per road type and policy, with evidence shown."""
     shown = summary[summary["policy"].isin(SHOWN) & (summary["segment"] != ALL_ROADS)]
     shown = shown[[not same_as_compliance(s, p) for s, p in zip(shown["segment"], shown["policy"])]]
+    shown = shown[shown["killed_prevented_vs_bau"].abs() >= 0.5]      # caps that affect nobody beyond business as usual
     fig, ax = plt.subplots(figsize=(9, 8), facecolor=SURFACE)
     ax.set_facecolor(SURFACE)
     y, ticks, labels = 0, [], []
@@ -282,10 +283,10 @@ def chart_deaths(summary: pd.DataFrame, path: Path) -> None:
     for side in ("top", "right", "left", "bottom"):
         ax.spines[side].set_visible(False)
     ax.set_xlabel("Deaths prevented per year, beyond business-as-usual ISA", color=MUTED, fontsize=9)
-    ax.set_title("Holding cars to the limit, or capping them, against the ISA GB will mandate",
+    ax.set_title("Holding vehicles to their limits, or capping them, against the ISA GB will mandate",
                  loc="left", fontsize=12, color=INK, pad=28)
     legend = [
-        plt.Line2D([], [], color=COLOURS["compliance"], marker="o", lw=2, label="Posted-limit compliance"),
+        plt.Line2D([], [], color=COLOURS["compliance"], marker="o", lw=2, label="Legal-limit compliance"),
         plt.Line2D([], [], color=COLOURS["cap"], marker="o", lw=2, label="Flat cap"),
         plt.Line2D([], [], color=MUTED, marker=">", markerfacecolor=SURFACE, lw=0, label="Lower bound (curve cut short)"),
         plt.Line2D([], [], color=MUTED, lw=6, alpha=0.25, label="Beyond the evidence: range across models"),
@@ -294,7 +295,7 @@ def chart_deaths(summary: pd.DataFrame, path: Path) -> None:
     fig.text(0.01, 0.01, f"Dot: central estimate. Line: 5th to 95th percentile of {N_DRAWS:,} Monte Carlo draws. "
              "2024 DfT free-flow speeds; 2022-2024 STATS19 casualties.", fontsize=7.5, color=MUTED)
     fig.tight_layout(rect=(0, 0.02, 1, 1))
-    fig.savefig(path, dpi=150, facecolor=SURFACE)
+    fig.savefig(path, dpi=300, facecolor=SURFACE)
     plt.close(fig)
 
 
@@ -324,7 +325,7 @@ def chart_speeds(distributions: dict, path: Path) -> None:
         ax.spines[side].set_visible(False)
     ax.legend(loc="upper left", frameon=False, fontsize=8.5, labelcolor=MUTED)
     fig.tight_layout()
-    fig.savefig(path, dpi=150, facecolor=SURFACE)
+    fig.savefig(path, dpi=300, facecolor=SURFACE)
     plt.close(fig)
 
 

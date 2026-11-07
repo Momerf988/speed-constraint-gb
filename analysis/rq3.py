@@ -322,12 +322,12 @@ def chart_bcr(summary: pd.DataFrame, path: Path) -> None:
             ax.text(r["bcr_p95"] * 1.15, y, pays_if(r["break_even_free_flow"]), va="center", fontsize=8, color=MUTED)
         else:
             low, high = model_range(r, "bcr")
-            ax.plot([low, high], [y, y], color=c, lw=6, alpha=0.25, solid_capstyle="round")
+            ax.plot([low * 0.985, high * 1.015], [y, y], color=c, lw=6, alpha=0.25, solid_capstyle="round")     # always visible
         labels.append(f"{r['segment']}: {POLICY_NAMES[r['policy']].lower()}")
     ax.axvline(1, color=INK, lw=1)
     ax.text(1.1, -0.75, "pays for itself →", fontsize=8.5, color=INK)
     ax.set_xscale("log")
-    ax.set_xlim(0.01, 1000)
+    ax.set_xlim(0.03, 30)
     ax.set_ylim(len(rows) - 0.5, -1)
     ax.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda x, _: f"{x:g}"))
     ax.set_yticks(range(len(rows)), labels, fontsize=8.5, color=MUTED)
@@ -345,7 +345,7 @@ def chart_bcr(summary: pd.DataFrame, path: Path) -> None:
     ax.legend(handles=legend, loc="upper center", bbox_to_anchor=(0.4, -0.13), ncol=2, frameon=False, fontsize=8,
               labelcolor=MUTED)
     fig.tight_layout()
-    fig.savefig(path, dpi=150, facecolor=SURFACE)
+    fig.savefig(path, dpi=300, facecolor=SURFACE)
     plt.close(fig)
 
 
@@ -373,7 +373,7 @@ def chart_sensitivity(sens: pd.DataFrame, path: Path) -> None:
     ax.set_xlabel(f"Net benefit, £m a year (central {central:,.0f}; dotted line = break-even)", color=MUTED, fontsize=9)
     ax.set_title(f"{POLICY_NAMES[FOCUS[1]]} on {FOCUS[0]}: what moves the answer", loc="left", fontsize=11, color=INK)
     fig.tight_layout()
-    fig.savefig(path, dpi=150, facecolor=SURFACE)
+    fig.savefig(path, dpi=300, facecolor=SURFACE)
     plt.close(fig)
 
 

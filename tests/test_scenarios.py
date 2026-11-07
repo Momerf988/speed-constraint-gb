@@ -239,6 +239,14 @@ def test_measured_from_the_new_mean_a_uniform_slowdown_earns_no_credit():
     assert old["rho"] < 1
 
 
+def test_the_step_from_ksi_to_deaths_follows_the_drawn_power():
+    after = apply_policy("compliance", TODAY_48, URBAN_48, isa_working=0.665)
+    in_step = model_b(TODAY_48, after, TODAY_48.speeds_kmh, URBAN_48, K, replace(CENTRAL, urban_fatal_ratio=1.0))
+    steeper = model_b(TODAY_48, after, TODAY_48.speeds_kmh, URBAN_48, K, replace(CENTRAL, urban_fatal_ratio=2.0))
+    assert in_step["fatal"] == pytest.approx(in_step["ksi"])    # at 1.0, deaths fall in step with KSI
+    assert steeper["fatal"] < in_step["fatal"]
+
+
 def test_the_absolute_curve_measures_from_60_kmh_and_stops_at_45_and_80():
     today = uniform(30, 90)
     after = apply_policy("compliance", today, URBAN_48, isa_working=0.665)
