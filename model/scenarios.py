@@ -6,7 +6,8 @@ and the environment that picks its Elvik (2009) severity exponents.
 
 Traffic on each road type is cars and vans, each with its own speeds and its own legal limit.
 Most vans are goods vehicles up to 7.5 t: 80 km/h on single carriageways, against 97 km/h for
-cars and car-derived vans (GOV.UK, "Speed limits"); the limits are the same elsewhere.
+cars and car-derived vans (GOV.UK, "Speed limits"); on the other three road types modelled here the
+limits are the same (they differ on dual carriageways, which DfT publishes no speeds for).
 
 Policies, each a change to the distribution of speeds:
     today        speeds as DfT observed them
@@ -26,8 +27,9 @@ How GB's ISA is used (IsaUse):
         effect  = w + (1 - w) * kappa
     s      share of driving with ISA switched off
     o_v    share of driving at speed v that is overridden. Drivers override in order to speed, so
-           all override time falls above the limit: o_v = min(1, o / share of driving above the
-           limit), where o is the share of driving time overridden in the ISA-UK trials
+           all override falls above the limit: o_v = min(1, o / share of driving above the limit),
+           where o is the share of distance driven with ISA overridden in the ISA-UK trials, by
+           speed limit (Lai and Carsten 2012, Table 5 and Fig. 8)
     w      share of the fleet with speed control; the rest has a warning only
     kappa  what a warning achieves, relative to speed control used the same way
 """
@@ -50,7 +52,7 @@ class RoadType:
     curve_id: str | None    # individual risk curve in the parameters file; None = no curve (motorways)
     dv_range_kmh: tuple[float, float] | None   # range of speed differences the curve was fitted on
     environment: str        # "urban" or "rural", for the Elvik (2009) severity exponents
-    override_share: float   # share of driving time with overridable ISA overridden (ISA-UK trials)
+    override_share: float   # share of distance driven with ISA overridden (ISA-UK trials, Lai and Carsten 2012, Table 5)
     van_limit_kmh: float    # legal limit of goods vans up to 7.5 t
 
     def legal_limit(self, vehicle: str) -> float:
@@ -59,13 +61,13 @@ class RoadType:
 
 ROAD_TYPES = (
     RoadType("32 km/h roads", "20 mph speed limit roads", 20 * MPH_TO_KMH,
-             "kloeden2002_urban_difference", (0.0, 20.0), "urban", 0.13, 20 * MPH_TO_KMH),
+             "kloeden2002_urban_difference", (0.0, 20.0), "urban", 0.133, 20 * MPH_TO_KMH),
     RoadType("48 km/h roads", "30 mph speed limit roads", 30 * MPH_TO_KMH,
-             "kloeden2002_urban_difference", (0.0, 20.0), "urban", 0.05, 30 * MPH_TO_KMH),
+             "kloeden2002_urban_difference", (0.0, 20.0), "urban", 0.081, 30 * MPH_TO_KMH),
     RoadType("97 km/h single carriageways", "National Speed Limit Single Carriageways", 60 * MPH_TO_KMH,
-             "kloeden2001_rural_difference", (-10.0, 30.0), "rural", 0.05, 50 * MPH_TO_KMH),
+             "kloeden2001_rural_difference", (-10.0, 30.0), "rural", 0.013, 50 * MPH_TO_KMH),
     RoadType("113 km/h motorways", "Motorways", 70 * MPH_TO_KMH,
-             None, None, "rural", 0.16, 70 * MPH_TO_KMH),
+             None, None, "rural", 0.163, 70 * MPH_TO_KMH),
 )
 
 CAPS_KMH = (48, 60, 80, 97)

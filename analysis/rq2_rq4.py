@@ -66,11 +66,14 @@ ISA_UK_INJURIES_PREVENTED = {        # Tate and Carsten (2008), Table 4: injury 
 CR204_COMPLIANCE = 0.238             # CR 204 Table 3.15: casualty crashes avoided, rural South Australia, total compliance
 CR204_80_LIMIT = 0.324               # the same table: 80 km/h maximum on undivided roads
 VADEBY_SHARE_OF_DEATHS = 0.25        # Vadeby (2023): full compliance in Sweden, Exponential model
-LAI_CHOSEN_TO_UNIVERSAL = 12 / 29    # Lai et al. (2012) via Day et al. (2023): serious injuries -12% vs -29%
-LAI_ADVISORY_TO_UNIVERSAL = 3 / 29   # the same source: advisory ISA, -3%
+# Lai, Carsten and Tate (2012), Table 4: injury accidents prevented on all roads with every car fitted, by
+# voluntary (overridable) 12.0%, advisory 2.7% and mandatory 28.9% ISA. Injury accidents, not serious injuries,
+# as Day et al. (2023) report them: Lai et al. scaled their KSI-based curves to all injury accidents.
+LAI_CHOSEN_TO_UNIVERSAL = 0.120 / 0.289
+LAI_ADVISORY_TO_UNIVERSAL = 0.027 / 0.289
 TRL_DEATHS_IN_TARGET = 0.1636        # TRL (2024) Table 61: cars, killed, medium, of those in car collisions
-LAI_CO2_MANDATORY = 0.058            # Lai et al. (2012) via TRL (2024): CO2 saved on 113 km/h roads, mandatory ISA
-LAI_CO2_VOLUNTARY = 0.034            # the same source: voluntary ISA
+LAI_CO2_MANDATORY = 0.058            # Lai et al. (2012), section 4.3: CO2 saved on 113 km/h roads, mandatory ISA
+LAI_CO2_VOLUNTARY = 0.034            # the same: voluntary ISA
 
 # Chart colours (light surface): one colour per policy kind, so a policy keeps its colour in every chart
 SURFACE, INK, MUTED, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#e4e3df"
@@ -163,24 +166,34 @@ def print_findings(summary: pd.DataFrame, baseline: pd.DataFrame, sensitivity: p
         rows = rows.set_index("policy")
         print(f"  {name:32s}" + "".join(f"{rows.loc[p, 'killed_prevented_vs_bau']:12.0f}" for p in SHOWN))
 
-    print("\nChecks against published estimates: reductions, not shares remaining")
-    print(f"  {'':58s}{'ours':>8s}{'ours, f=1':>11s}{'published':>11s}")
+    print("\nComparison with published estimates, and replication of their methods: reductions, not shares remaining")
+    print(f"  {'':58s}{'ours':>8s}{'ours, f=1':>11s}{'their method':>14s}{'published':>11s}")
     for _, row in validation.iterrows():
-        f_one = "" if pd.isna(row["ours_f1"]) else f"{row['ours_f1']:.0%}"
-        print(f"  {row['check']:58s}{row['ours']:8.0%}{f_one:>11s}{row['published']:11.0%}   {row['source']}")
+        f_one = "" if pd.isna(row["ours_f1"]) else f"{row['ours_f1']:.1%}"
+        method = "" if pd.isna(row["ours_method"]) else f"{row['ours_method']:.1%}"
+        print(f"  {row['check']:58s}{row['ours']:8.1%}{f_one:>11s}{method:>14s}{row['published']:11.1%}   {row['source']}")
+        if row["method"]:
+            print(f"  {'':58s}their method: {row['method']}")
     print("  f=1: every casualty in a car or van collision responds, not only the free-travel share.")
-    print("  No single value of f matches both ISA-UK, which applied its curves to all crashes, and Sweden.")
+    print("  Agreement under a study's own method checks the code; f stays a judgement between Kloeden et al.'s")
+    print("  assumed 0.56 (urban) and 0.80 (rural) and ISA-UK's approach of applying the curves to all crashes.")
 
 
-def validate(central: pd.DataFrame, all_responding: pd.DataFrame, speed_control: pd.DataFrame,
-             warning_only: pd.DataFrame, baseline: pd.DataFrame, absolute: pd.DataFrame,
-             absolute_all_responding: pd.DataFrame) -> pd.DataFrame:
+def validate(runs: dict[str, pd.DataFrame], baseline: pd.DataFrame) -> pd.DataFrame:
     """The model's results next to the published figures they can be compared with.
 
-    all_responding is the same run with f = 1, so the effect of the free-travel share is visible.
-    speed_control and warning_only are the same run with one kind of ISA in every car. absolute and
-    absolute_all_responding use the absolute urban curve, as ISA-UK did on 48 km/h roads.
+    Three of our numbers per check: "ours" at the central assumptions; "ours_f1" with f = 1, so every
+    casualty in a car or van collision responds; and "ours_method", the model set up as the published
+    study was (described in "method"). Agreement with a study that used the same method checks the code;
+    it does not show which free-travel share is right. runs holds:
+        central, all_responding            central and f = 1
+        absolute, absolute_all_responding  the absolute urban curve, as ISA-UK used on 48 km/h roads
+        speed_control, warning_only        one kind of ISA in every car, switched off as centrally
+        speed_control_on, warning_only_on  the same, never switched off, as in the ISA-UK trials
+        trl_method                         never switched off and f = 1, as TRL (2024) assumed
     """
+    central, all_responding = runs["central"], runs["all_responding"]
+
     def compliance(table):
         return table[table["policy"] == "compliance"].set_index("segment")
 
@@ -192,9 +205,9 @@ def validate(central: pd.DataFrame, all_responding: pd.DataFrame, speed_control:
         r = table[(table["segment"] == segment) & (table["policy"] == policy)].iloc[0]
         return r["ksi_prevented_b"] / r["baseline_ksi"]
 
-    def deaths_share(table):
+    def deaths_share(table, column="killed_prevented"):
         c = compliance(table)
-        return c["killed_prevented"].sum() / c["baseline_killed"].sum()
+        return c[column].sum() / c["baseline_killed"].sum()
 
     def isa_share(table):
         c = compliance(table)
@@ -202,48 +215,60 @@ def validate(central: pd.DataFrame, all_responding: pd.DataFrame, speed_control:
         curves = c["ksi_prevented_b"].notna()
         return bau.loc[curves, "ksi_prevented_b"].sum() / c.loc[curves, "ksi_prevented_b"].sum()
 
-    rows = [{"check": f"Injuries prevented at the limit, {segment}",
-             "ours": injuries_prevented(central, segment), "ours_f1": injuries_prevented(all_responding, segment),
-             "published": published, "source": "Tate and Carsten (2008), ISA-UK"}
-            for segment, published in ISA_UK_INJURIES_PREVENTED.items()]
-    rows.insert(2, {"check": "  the same, 48 km/h roads, with ISA-UK's absolute curve",
-                    "ours": injuries_prevented(absolute, "48 km/h roads"),
-                    "ours_f1": injuries_prevented(absolute_all_responding, "48 km/h roads"),
-                    "published": ISA_UK_INJURIES_PREVENTED["48 km/h roads"], "source": "Tate and Carsten (2008), ISA-UK"})
+    def row(check, ours, ours_f1, ours_method, method, published, source):
+        return {"check": check, "ours": ours, "ours_f1": ours_f1, "ours_method": ours_method, "method": method,
+                "published": published, "source": source}
+
+    rows = []
+    for segment, published in ISA_UK_INJURIES_PREVENTED.items():
+        f1 = injuries_prevented(all_responding, segment)
+        method = "f = 1, as ISA-UK applied its curves to all injury crashes"
+        if segment == "32 km/h roads":
+            f1_method, method = np.nan, "not possible: ISA-UK used Taylor et al.'s U2 model here"
+        elif segment == "48 km/h roads":
+            f1_method, method = injuries_prevented(runs["absolute_all_responding"], segment), \
+                "f = 1 and the absolute urban curve, as ISA-UK used"
+        else:
+            f1_method = f1
+        rows.append(row(f"Injuries prevented at the limit, {segment}", injuries_prevented(central, segment), f1,
+                        f1_method, method, published, "Tate and Carsten (2008), ISA-UK"))
     rural = "97 km/h single carriageways"
-    rows.append({"check": "KSI prevented at the limit, 97 km/h roads",
-                 "ours": ksi_prevented_share(central, rural, "compliance"),
-                 "ours_f1": ksi_prevented_share(all_responding, rural, "compliance"),
-                 "published": CR204_COMPLIANCE, "source": "Kloeden et al. (2001), casualty crashes, South Australia"})
-    rows.append({"check": "KSI prevented by an 80 km/h cap, 97 km/h roads",
-                 "ours": ksi_prevented_share(central, rural, "cap_80"),
-                 "ours_f1": ksi_prevented_share(all_responding, rural, "cap_80"),
-                 "published": CR204_80_LIMIT, "source": "Kloeden et al. (2001), 80 km/h limit, South Australia"})
-    rows.append({"check": "Deaths prevented by full compliance (modelled roads)",
-                 "ours": deaths_share(central), "ours_f1": deaths_share(all_responding),
-                 "published": VADEBY_SHARE_OF_DEATHS, "source": "Vadeby (2023), Sweden"})
-    rows.append({"check": "ISA with speed control: KSI benefit / mandatory ISA's",
-                 "ours": isa_share(speed_control), "ours_f1": np.nan,
-                 "published": LAI_CHOSEN_TO_UNIVERSAL, "source": "Lai et al. (2012), voluntary ISA"})
-    rows.append({"check": "ISA with warnings only: KSI benefit / mandatory ISA's",
-                 "ours": isa_share(warning_only), "ours_f1": np.nan,
-                 "published": LAI_ADVISORY_TO_UNIVERSAL, "source": "Lai et al. (2012), advisory ISA"})
-    bau_deaths = central[central["policy"] == "bau_isa"].set_index("segment")["killed_prevented"]
-    bau_deaths_f1 = all_responding[all_responding["policy"] == "bau_isa"].set_index("segment")["killed_prevented"]
-    responding = (baseline["killed"] * baseline["k_fatal"]).loc[bau_deaths.index].sum()
+    same_curve = "the central model: Kloeden et al.'s own curve and free-travel share"
+    rows.append(row("KSI prevented at the limit, 97 km/h roads", ksi_prevented_share(central, rural, "compliance"),
+                    ksi_prevented_share(all_responding, rural, "compliance"), ksi_prevented_share(central, rural, "compliance"),
+                    same_curve, CR204_COMPLIANCE, "Kloeden et al. (2001), casualty crashes, South Australia"))
+    rows.append(row("KSI prevented by an 80 km/h cap, 97 km/h roads", ksi_prevented_share(central, rural, "cap_80"),
+                    ksi_prevented_share(all_responding, rural, "cap_80"), ksi_prevented_share(central, rural, "cap_80"),
+                    same_curve, CR204_80_LIMIT, "Kloeden et al. (2001), 80 km/h limit, South Australia"))
+    rows.append(row("Deaths prevented by full compliance (modelled roads)", deaths_share(central), deaths_share(all_responding),
+                    deaths_share(central, "killed_prevented_exp"), "Model A, Exponential form, which has no free-travel share",
+                    VADEBY_SHARE_OF_DEATHS, "Vadeby (2023), Sweden"))
+    trial = "never switched off, as in the ISA-UK trials"
+    rows.append(row("ISA with speed control: KSI benefit / mandatory ISA's", isa_share(runs["speed_control"]), np.nan,
+                    isa_share(runs["speed_control_on"]), trial, LAI_CHOSEN_TO_UNIVERSAL,
+                    "Lai et al. (2012), voluntary ISA, injury accidents"))
+    rows.append(row("ISA with warnings only: KSI benefit / mandatory ISA's", isa_share(runs["warning_only"]), np.nan,
+                    isa_share(runs["warning_only_on"]), trial, LAI_ADVISORY_TO_UNIVERSAL,
+                    "Lai et al. (2012), advisory ISA, injury accidents"))
+
     def motorway_car_co2_saved(table, policy):
         r = table[(table["policy"] == policy) & (table["segment"] == "113 km/h motorways")].iloc[0]
         return r["car_co2_saved_per_km"] / (r["car_co2_per_km"] + r["car_co2_saved_per_km"])
 
-    rows.append({"check": "CO2 saved on motorways, cars: mandatory ISA",
-                 "ours": motorway_car_co2_saved(central, "compliance"), "ours_f1": np.nan,
-                 "published": LAI_CO2_MANDATORY, "source": "Lai et al. (2012), via TRL (2024)"})
-    rows.append({"check": "CO2 saved on motorways, cars: ISA with speed control",
-                 "ours": motorway_car_co2_saved(speed_control, "bau_isa"), "ours_f1": np.nan,
-                 "published": LAI_CO2_VOLUNTARY, "source": "Lai et al. (2012), via TRL (2024)"})
-    rows.append({"check": "Mandated ISA: deaths prevented / deaths in car collisions",
-                 "ours": bau_deaths.sum() / responding, "ours_f1": bau_deaths_f1.sum() / responding,
-                 "published": TRL_DEATHS_IN_TARGET, "source": "TRL (2024), half warning, half speed control"})
+    rows.append(row("CO2 saved on motorways, cars: mandatory ISA", motorway_car_co2_saved(central, "compliance"), np.nan,
+                    np.nan, "", LAI_CO2_MANDATORY, "Lai et al. (2012)"))
+    rows.append(row("CO2 saved on motorways, cars: ISA with speed control", motorway_car_co2_saved(runs["speed_control"], "bau_isa"),
+                    np.nan, motorway_car_co2_saved(runs["speed_control_on"], "bau_isa"), trial, LAI_CO2_VOLUNTARY,
+                    "Lai et al. (2012)"))
+
+    def bau_deaths(table):
+        return table[table["policy"] == "bau_isa"].set_index("segment")["killed_prevented"]
+
+    responding = (baseline["killed"] * baseline["k_fatal"]).loc[bau_deaths(central).index].sum()
+    rows.append(row("Mandated ISA: deaths prevented / deaths in car collisions", bau_deaths(central).sum() / responding,
+                    bau_deaths(all_responding).sum() / responding, bau_deaths(runs["trl_method"]).sum() / responding,
+                    "never switched off and f = 1, as TRL assumed", TRL_DEATHS_IN_TARGET,
+                    "TRL (2024), half warning, half speed control"))
     return pd.DataFrame(rows)
 
 
@@ -370,15 +395,19 @@ def main() -> int:
     ranges = percentiles(draws, ["segment", "policy"], SUMMARY_COLUMNS)
     summary = central.merge(ranges, on=["segment", "policy"], how="left")
 
-    validation = validate(central[central["segment"] != ALL_ROADS],
-                          run(distributions, baseline, replace(central_assumptions, free_travel_share=1.0,
-                                                               free_travel_share_rural=1.0)),
-                          run(distributions, baseline, central_assumptions, replace(central_isa, speed_control_share=1.0)),
-                          run(distributions, baseline, central_assumptions, replace(central_isa, speed_control_share=0.0)),
-                          baseline,
-                          run(distributions, baseline, replace(central_assumptions, reference_mean="absolute")),
-                          run(distributions, baseline, replace(central_assumptions, reference_mean="absolute",
-                                                               free_travel_share=1.0, free_travel_share_rural=1.0)))
+    full = replace(central_assumptions, free_travel_share=1.0, free_travel_share_rural=1.0)
+    never_off = replace(central_isa, switched_off=0.0)
+    validation = validate({
+        "central": central[central["segment"] != ALL_ROADS],
+        "all_responding": run(distributions, baseline, full),
+        "absolute": run(distributions, baseline, replace(central_assumptions, reference_mean="absolute")),
+        "absolute_all_responding": run(distributions, baseline, replace(full, reference_mean="absolute")),
+        "speed_control": run(distributions, baseline, central_assumptions, replace(central_isa, speed_control_share=1.0)),
+        "warning_only": run(distributions, baseline, central_assumptions, replace(central_isa, speed_control_share=0.0)),
+        "speed_control_on": run(distributions, baseline, central_assumptions, replace(never_off, speed_control_share=1.0)),
+        "warning_only_on": run(distributions, baseline, central_assumptions, replace(never_off, speed_control_share=0.0)),
+        "trl_method": run(distributions, baseline, full, never_off),
+    }, baseline)
 
     summary.to_parquet(RESULTS / "casualty_model.parquet", index=False, compression="zstd")
     sensitivity.to_parquet(RESULTS / "casualty_sensitivity.parquet", index=False, compression="zstd")

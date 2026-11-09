@@ -189,7 +189,7 @@ def test_override_cannot_exceed_all_the_speeding_there_is():
 
 def test_random_override_is_one_share_for_every_speed():
     held = held_to_limit(TODAY_48, URBAN_48, replace(CONTROL_ONLY, override_targets_speeding=False))
-    assert held == pytest.approx(0.70 * 0.95)
+    assert held == pytest.approx(0.70 * (1 - URBAN_48.override_share))
 
 
 def test_targeted_override_holds_back_less_speeding_than_random_override():

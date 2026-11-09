@@ -18,7 +18,7 @@ What is drawn, and where each bound comes from (all in the parameters file or it
                                                    use it, 11 sometimes
     Fleet share with speed control 0 to 1          TRL (2024) assumes a half; the makers' choice is not published
     Warning effect, kappa          0.20 to 0.36    TRL (2024) Table 34: advisory / voluntary, by severity
-    ISA overridden, by road type   +/- 5 points    around the ISA-UK trial shares (Lai and Carsten 2012)
+    ISA overridden, by road type   +/- 5 points    around the ISA-UK trial shares (Lai and Carsten 2012, Table 5), not below 0
     Urban curve                    one of four     Kloeden (2002) refits for case-speed errors of 0-7.5 km/h
     Deaths / KSI power, urban      1.0 to 2.0      a judgement, around Elvik's (2009) 3.0 / 2.0 = 1.5
     Deaths / KSI power, rural      1.0 to 1.6      a judgement, around Elvik's (2009) 4.6 / 3.5 = 1.31
@@ -61,10 +61,10 @@ SWITCHED_OFF_RANGE = (0.10, 0.50)
 SPEED_CONTROL_RANGE = (0.0, 1.0)
 WARNING_EFFECT_RANGE = (0.20, 0.36)
 OVERRIDE_RANGES = {
-    "32 km/h roads": (0.08, 0.18),
-    "48 km/h roads": (0.02, 0.08),
-    "97 km/h single carriageways": (0.02, 0.08),
-    "113 km/h motorways": (0.11, 0.21),
+    "32 km/h roads": (0.083, 0.183),
+    "48 km/h roads": (0.031, 0.131),
+    "97 km/h single carriageways": (0.0, 0.063),
+    "113 km/h motorways": (0.113, 0.213),
 }
 URBAN_CURVES = (
     "kloeden2002_urban_difference_se0",
