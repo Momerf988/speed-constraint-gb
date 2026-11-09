@@ -338,6 +338,9 @@ def main() -> int:
     groups = both_groups(MARTS)
     triple = {outcome: ddd_poisson(main_sample(groups, outcome), outcome, "wales", "after", "road_group", TREATED_ROADS)
               for outcome in SERIES}
+    # All casualties keep Dyfed-Powys, whose rise on other roads enlarges the triple difference: the same without it
+    triple_no_dp = ddd_poisson(without(main_sample(groups, "casualties"), severity_break), "casualties", "wales", "after",
+                               "road_group", TREATED_ROADS)
     net = {outcome: did_poisson(all_roads(main_sample(groups, outcome)), outcome, "wales", "after") for outcome in SERIES}
     chart_synthetic(synth, main_inf["series"], FIGURES / "wales_synthetic_control.png")
     check = recording_check(MARTS, flagged[0])
@@ -375,6 +378,8 @@ def main() -> int:
         r = triple[outcome]
         print(f"  {'Triple difference, against other Welsh roads: ' + label:62s}{r['rate_ratio']:11.3f}"
               f"{r['ci_low']:9.3f} to {r['ci_high']:.3f}")
+    print(f"  {'Triple difference, all casualties, without ' + SEVERITY_BREAK:62s}{triple_no_dp['rate_ratio']:11.3f}"
+          f"{triple_no_dp['ci_low']:9.3f} to {triple_no_dp['ci_high']:.3f}")
     for outcome, (label, _) in SERIES.items():
         r = net[outcome]
         print(f"  {'All roads together, the net change: ' + label:62s}{r['rate_ratio']:11.3f}"
@@ -412,7 +417,8 @@ def main() -> int:
           + f"; at {coefficient}, the 95% interval gives {speed_ci[0]:.1f} to {speed_ci[1]:.1f} km/h.")
 
     summary = {
-        "main": results.to_dict("records"), "trend": trend, "triple": triple, "net": net,
+        "main": results.to_dict("records"), "trend": trend, "triple": triple, "triple_without_severity_break": triple_no_dp,
+        "net": net,
         "leave_out": named(leave_out),
         "single_unit": {"main": {k: v for k, v in single.items() if k != "placebo"} | {"placebo": named(single["placebo"])},
                         "every_force": {k: v for k, v in every_force["single_unit"].items() if k != "placebo"},
