@@ -28,7 +28,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from analysis.rq3 import MARTS, RESULTS, TARGET_CUT, appraise, hours_table, load_exposure, monte_carlo
+from analysis.rq3 import (MARTS, RESULTS, TARGET_CUT, appraise, beyond_compliance, flat_beyond_compliance, hours_table,
+                          load_exposure, monte_carlo)
 from model.appraisal import FREE_FLOW_SHARE, ksi_from_casualties, load_values
 from model.casualties import Assumptions
 from model.run import load_inputs, run, speed_distributions
@@ -78,6 +79,28 @@ def headlines(table: pd.DataFrame, baseline: pd.DataFrame, model: str = "preferr
         "97 km/h cap on motorways, ratio": ratio(table.loc[[(MOTORWAY, "cap_97")]]),
         "Flat 97 km/h limiter on all four road types, ratio": ratio(on("cap_97")),
         "Flat 80 km/h limiter on all four road types, ratio": ratio(on("cap_80")),
+        **extra_headlines(table.reset_index(), benefit, suffix),
+    }
+
+
+def extra_headlines(table: pd.DataFrame, benefit: str, suffix: str) -> dict[str, float]:
+    """The caps judged against compliance, which they contain (analysis.rq3.beyond_compliance)."""
+    increments = beyond_compliance(table)
+    flat = flat_beyond_compliance(increments).set_index("policy")
+    increments = increments.set_index(["segment", "policy"])
+
+    def ratio(row) -> float:
+        return float(row[benefit] / row["cost"])
+
+    cap = increments.loc[(RURAL, "cap_80")]
+    deaths = table.set_index(["segment", "policy"])[f"killed_prevented{suffix}_vs_bau"]
+    return {
+        "80 km/h cap on 97 km/h roads beyond compliance, ratio": ratio(cap),
+        "80 km/h cap on 97 km/h roads beyond compliance, deaths prevented":
+            float(deaths.loc[(RURAL, "cap_80")] - deaths.loc[(RURAL, "compliance")]),
+        "97 km/h cap on motorways beyond compliance, ratio": ratio(increments.loc[(MOTORWAY, "cap_97")]),
+        "Flat 97 km/h limiter beyond compliance, ratio": ratio(flat.loc["cap_97"]),
+        "Flat 80 km/h limiter beyond compliance, ratio": ratio(flat.loc["cap_80"]),
     }
 
 
@@ -108,6 +131,12 @@ def monte_carlo_ranges(mc: pd.DataFrame, draws: pd.DataFrame, baseline: pd.DataF
     def one(segment: str, policy: str, column: str) -> pd.Series:
         return mc[(mc["segment"] == segment) & (mc["policy"] == policy)].set_index("draw")[column]
 
+    increments = beyond_compliance(mc)
+    flat_more = flat_beyond_compliance(increments).set_index("policy")
+
+    def more(segment: str, policy: str, column: str) -> pd.Series:
+        return increments[(increments["segment"] == segment) & (increments["policy"] == policy)].set_index("draw")[column]
+
     modelled = draws[draws["segment"].isin(FREE_FLOW_SHARE)]
     bau = modelled[modelled["policy"] == "bau_isa"].reset_index(drop=True)
     base = baseline.loc[bau["segment"]].reset_index(drop=True)
@@ -126,6 +155,11 @@ def monte_carlo_ranges(mc: pd.DataFrame, draws: pd.DataFrame, baseline: pd.DataF
         "97 km/h cap on motorways, ratio": spread(one(MOTORWAY, "cap_97", "bcr")),
         "Flat 97 km/h limiter on all four road types, ratio": spread(flat_ratio("cap_97")),
         "Flat 80 km/h limiter on all four road types, ratio": spread(flat_ratio("cap_80")),
+        "80 km/h cap on 97 km/h roads beyond compliance, ratio": spread(more(RURAL, "cap_80", "bcr")),
+        "80 km/h cap on 97 km/h roads beyond compliance, deaths prevented": spread(more(RURAL, "cap_80", "killed_prevented_vs_bau")),
+        "97 km/h cap on motorways beyond compliance, ratio": spread(more(MOTORWAY, "cap_97", "bcr")),
+        "Flat 97 km/h limiter beyond compliance, ratio": spread(flat_more.loc["cap_97", "bcr"]),
+        "Flat 80 km/h limiter beyond compliance, ratio": spread(flat_more.loc["cap_80", "bcr"]),
     }
 
 
@@ -160,8 +194,8 @@ def main() -> int:
         "a normal shape": headlines(appraised(d=speed_distributions(speeds, "normal")), baseline),
         "a lognormal shape": headlines(appraised(d=speed_distributions(speeds, "lognormal")), baseline),
         "random override": headlines(appraised(isa=replace(central_isa, override_targets_speeding=False)), baseline),
-        "speed control in every car": headlines(appraised(isa=replace(central_isa, speed_control_share=1.0)), baseline),
-        "a warning in every car": headlines(appraised(isa=replace(central_isa, speed_control_share=0.0)), baseline),
+        "speed control in every vehicle": headlines(appraised(isa=replace(central_isa, speed_control_share=1.0)), baseline),
+        "a warning in every vehicle": headlines(appraised(isa=replace(central_isa, speed_control_share=0.0)), baseline),
         "ISA showing a van its own limit": headlines(appraised(isa=replace(central_isa, vans_read_own_limit=True)), baseline),
     }
     table = structural_range(central, variants)
@@ -186,6 +220,7 @@ def main() -> int:
              "Compliance £m": "Compliance beyond ISA, benefit, £m a year",
              "Cap 80 deaths": "80 km/h cap on 97 km/h roads, deaths prevented",
              "Cap 80 ratio": "80 km/h cap on 97 km/h roads, ratio",
+             "Cap 80 vs comp.": "80 km/h cap on 97 km/h roads beyond compliance, ratio",
              "Flat 80 ratio": "Flat 80 km/h limiter on all four road types, ratio"}
     print("\nEvery variant, one at a time")
     print(f"  {'':34s}" + "".join(f"{name:>19s}" for name in shown))

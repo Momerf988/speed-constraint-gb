@@ -2,7 +2,8 @@
 
 Combines the casualty model (Phase 6), DfT's appraisal values (model/parameters/
 appraisal_values.csv) and car and van traffic per road type (data/marts/agg_traffic_segment).
-Every policy is measured against business-as-usual ISA, in £ a year. "Ratio" throughout is annual
+Every policy is measured against business-as-usual ISA, in £ a year, and every cap also against
+posted-limit compliance, which it contains (beyond_compliance): the comparison the cap must pass. "Ratio" throughout is annual
 benefit over annual time cost: there are no present values and no hardware costs. Runs:
     central       the central assumptions
     Monte Carlo   the 10,000 casualty draws from Phase 6, each with a free-flow share drawn too
@@ -14,6 +15,8 @@ then prints the findings and writes:
     results/appraisal_flat.parquet          a flat limiter: the four road types added up
     results/appraisal_bound.parquet         caps beyond the evidence: the best ratio possible
     results/appraisal_all_time.parquet      compliance if time gained by speeding were counted
+    results/appraisal_all_time_cap.parquet  the 80 km/h cap with all time counted, as Scotland's NSMR counts it
+    results/appraisal_beyond_compliance.parquet   every cap judged against compliance, by road type and flat
     results/appraisal_target.parquet        shares of the 2035 target
     figures/rq3_benefit_cost_ratio.png
     figures/rq3_cap80_sensitivity.png
@@ -38,8 +41,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from analysis.rq2_rq4 import COLOURS, GRID, INK, MUTED, POLICY_NAMES, SHOWN, SURFACE, colour, same_as_compliance
-from model.appraisal import (FREE_FLOW_RANGES, FREE_FLOW_SHARE, break_even_free_flow, capital_cost, casualty_benefit,
-                             hours_lost_per_km, ksi_from_casualties, load_values, read_values, time_cost)
+from model.appraisal import (FREE_FLOW_RANGES, FREE_FLOW_SHARE, break_even_free_flow, cap_beyond_compliance, capital_cost,
+                             casualty_benefit, hours_lost_per_km, ksi_from_casualties, load_values, read_values, time_cost)
 from model.casualties import Assumptions
 from model.run import BASELINE_YEARS, load_inputs, run, speed_distributions
 from model.scenarios import POLICIES, ROAD_TYPES, IsaUse, held_to_limit
@@ -54,6 +57,7 @@ FREE_FLOW_SEED = 20261031
 TARGET_CUT = 0.65                       # Road Safety Strategy: 65% fewer KSI by 2035 than in 2022-2024
 FOCUS = ("97 km/h single carriageways", "cap_80")   # the cap the evidence supports, used for the sensitivity chart
 MODELS = ("b", "power", "exp")
+FLAT = "All four road types"
 
 
 def load_exposure(marts_dir) -> tuple[pd.DataFrame, dict[str, float]]:
@@ -167,6 +171,54 @@ def appraise(casualties: pd.DataFrame, hours: pd.DataFrame, traffic, baseline, v
     return table
 
 
+ADDITIVE = ("killed_prevented_vs_bau", "ksi_prevented", "casualty_benefit", "fuel_benefit", "carbon_benefit", "benefit",
+            "benefit_b", "benefit_power", "benefit_exp", "time_cost", "capital_cost", "cost")
+ROAD_BY_SEGMENT = {road.segment: road for road in ROAD_TYPES}
+
+
+def beyond_compliance(table: pd.DataFrame) -> pd.DataFrame:
+    """Each cap judged against posted-limit compliance instead of business-as-usual ISA (incremental appraisal).
+
+    Compliance is nested in every cap that binds below the limit, and costs no lawful time, so the cap
+    must justify what it adds. For a cap at or above every vehicle's limit that is nothing; otherwise
+    it is the cap's result minus compliance's (model.appraisal.cap_beyond_compliance). Works on the
+    central table and on the Monte Carlo (one row per draw), keyed by segment, policy and any draw.
+    """
+    keys = ["draw", "segment"] if "draw" in table.columns else ["segment"]
+    caps = table[table["policy"].str.startswith("cap_")].reset_index(drop=True)
+    compliance = caps[keys].merge(table[table["policy"] == "compliance"], on=keys, how="left")
+    adds = np.array([cap_beyond_compliance(ROAD_BY_SEGMENT[s], float(p.removeprefix("cap_")))
+                     for s, p in zip(caps["segment"], caps["policy"])])
+    out = caps[keys + ["policy", "free_flow_share"]].copy()
+    out["adds_to_compliance"] = adds
+    for column in ADDITIVE:
+        out[column] = np.where(adds, caps[column].to_numpy() - compliance[column].to_numpy(), 0.0)
+    return with_ratios(out)
+
+
+def with_ratios(table: pd.DataFrame) -> pd.DataFrame:
+    """Net benefit, ratio (per model) and break-even free-flow share from summed benefit and cost columns."""
+    table = table.copy()
+    running = table["fuel_benefit"] + table["carbon_benefit"]
+    paid = table["cost"].where(table["cost"] > 1e-6)
+    table["net"] = table["benefit"] - table["cost"]
+    table["bcr"] = table["benefit"] / paid
+    for model in MODELS:
+        table[f"bcr_{model}"] = table[f"benefit_{model}"] / paid
+    if "free_flow_share" in table:
+        share = table["free_flow_share"]
+        table["break_even_free_flow"] = break_even_free_flow(table["casualty_benefit"].to_numpy(), (running / share).to_numpy(),
+                                                             (table["cost"] / share).to_numpy())
+    return table
+
+
+def flat_beyond_compliance(increments: pd.DataFrame) -> pd.DataFrame:
+    """A flat limiter on every road, beyond compliance: the road types added up, per cap (and per draw)."""
+    keys = ["draw", "policy"] if "draw" in increments.columns else ["policy"]
+    flat = increments.groupby(keys, sort=False)[list(ADDITIVE)].agg(lambda x: x.sum(skipna=False)).reset_index()
+    return with_ratios(flat)
+
+
 def monte_carlo(draws: pd.DataFrame, hours, traffic, baseline, values, ratios) -> pd.DataFrame:
     """Net benefit and benefit-cost ratio per draw: the Phase 6 casualty draws, plus a free-flow share each."""
     rng = np.random.default_rng(FREE_FLOW_SEED)
@@ -203,6 +255,22 @@ def focus_row(table: pd.DataFrame) -> pd.Series:
     return table[(table["segment"] == FOCUS[0]) & (table["policy"] == FOCUS[1])].iloc[0]
 
 
+def compliance_row(table: pd.DataFrame) -> pd.Series:
+    return table[(table["segment"] == FOCUS[0]) & (table["policy"] == "compliance")].iloc[0]
+
+
+def summarise_increments(increments, increments_mc, flat, flat_mc) -> pd.DataFrame:
+    """Every cap beyond compliance, by road type and as a flat limiter, with Monte Carlo percentiles."""
+    rows = pd.concat([increments, flat.assign(segment=FLAT, adds_to_compliance=True)], ignore_index=True)
+    draws = pd.concat([increments_mc, flat_mc.assign(segment=FLAT, adds_to_compliance=True)], ignore_index=True)
+    keys = ["segment", "policy"]
+    q = draws.groupby(keys, sort=False)[["benefit", "cost", "net", "bcr", "ksi_prevented", "killed_prevented_vs_bau"]] \
+        .quantile([0.05, 0.5, 0.95]).unstack()
+    q.columns = [f"{column}_p{round(p * 100)}" for column, p in q.columns]
+    q["chance_net_positive"] = draws.assign(pays=draws["net"] > 0).groupby(keys, sort=False)["pays"].mean()
+    return rows.merge(q.reset_index(), on=keys, how="left")
+
+
 def best_possible(summary: pd.DataFrame, baseline: pd.DataFrame, values, ratios) -> pd.DataFrame:
     """For caps beyond the evidence: the ratio if the cap prevented every casualty on that road type.
 
@@ -226,10 +294,14 @@ def best_possible(summary: pd.DataFrame, baseline: pd.DataFrame, values, ratios)
     return rows
 
 
-def sensitivity(cases: dict[str, tuple[float, float]]) -> pd.DataFrame:
-    """Net benefit and ratio of the focus policy, from (benefit, cost) per case."""
-    return pd.DataFrame([{"sensitivity": name, "net": benefit - cost, "bcr": benefit / cost}
-                         for name, (benefit, cost) in cases.items()])
+def sensitivity(cases: dict[str, tuple[float, float, float, float]]) -> pd.DataFrame:
+    """Net benefit and ratio of the focus cap per case, beyond BAU and beyond compliance.
+
+    Each case gives (benefit, cost) beyond business-as-usual ISA, then (benefit, cost) beyond compliance.
+    """
+    return pd.DataFrame([{"sensitivity": name, "net": benefit - cost, "bcr": benefit / cost,
+                          "net_vs_compliance": extra - extra_cost, "bcr_vs_compliance": extra / extra_cost}
+                         for name, (benefit, cost, extra, extra_cost) in cases.items()])
 
 
 def pays_if(share: float) -> str:
@@ -313,18 +385,53 @@ def print_findings(summary, values, traffic, ratios, baseline, compliance_all_ti
     print("   These are full-fleet steady states at 2022-2024 traffic and casualty levels, not forecasts for 2035.")
 
 
-def chart_bcr(summary: pd.DataFrame, path: Path) -> None:
+def print_beyond_compliance(extra: pd.DataFrame, sens: pd.DataFrame, nsmr: pd.DataFrame) -> None:
+    print("\n6. Caps judged against compliance, which they contain: what each adds (£m a year)")
+    for _, r in extra[extra["adds_to_compliance"].astype(bool)].iterrows():
+        if not r["policy"] in SHOWN:
+            continue
+        ratio = "" if pd.isna(r["bcr"]) else (f"ratio {r['bcr']:.2f} [{r['bcr_p5']:.2f} to {r['bcr_p95']:.2f}], "
+                                              f"models {model_range(r, 'bcr')[0]:.2f} to {model_range(r, 'bcr')[1]:.2f}")
+        print(f"   {r['segment']:28s} {POLICY_NAMES[r['policy']]:16s} casualties {millions(r['casualty_benefit']):>5s} + fuel "
+              f"{millions(r['fuel_benefit'])} + carbon {millions(r['carbon_benefit'])} = {millions(r['benefit']):>5s}; cost "
+              f"{millions(r['cost']):>5s}; net {millions(r['net']):>6s}; {ratio}; deaths {r['killed_prevented_vs_bau']:.0f}, "
+              f"KSI {r['ksi_prevented']:.0f}; "
+              + ("" if pd.isna(r["break_even_free_flow"]) else f"{pays_if(r['break_even_free_flow'])}; ")
+              + f"chance it pays {r['chance_net_positive']:.0%}")
+    print("   Caps at or above every vehicle's limit add nothing to compliance and are left out.")
+    print(f"\n   {POLICY_NAMES[FOCUS[1]]} on {FOCUS[0]}, one assumption changed at a time:  against BAU  |  against compliance")
+    for _, r in sens.iterrows():
+        print(f"   {r['sensitivity']:46s} ratio {r['bcr']:5.2f}, net {millions(r['net']):>5s}  |  ratio {r['bcr_vs_compliance']:5.2f}, "
+              f"net {millions(r['net_vs_compliance']):>5s}")
+    n = nsmr.iloc[0]
+    print(f"\n7. Counting all time, as Scotland's NSMR does: casualty value / all time lost (time only; with vehicle capital)")
+    for label, column in (("Model B", "casualty_benefit"), ("Model A, Power", "casualty_benefit_power"),
+                          ("Model A, Exponential", "casualty_benefit_exp")):
+        print(f"   {label:22s} {millions(n[column]):>5s} / {millions(n['time_cost'])} = {n[column] / n['time_cost']:.3f}; "
+              f"/ {millions(n['cost'])} = {n[column] / n['cost']:.3f}; against lawful time only {n[column] / n['lawful_time_cost']:.3f}")
+    print("   NSMR (Transport Scotland 2024, Option 1): 440 / 443 = 0.993 at full compliance; 259 / 223 = 1.161 at realistic compliance")
+
+
+def chart_bcr(summary: pd.DataFrame, extra: pd.DataFrame, path: Path) -> None:
     """Benefit-cost ratio of every cap that costs lawful time, with the evidence shown."""
     rows = summary[summary["costs_lawful_time"] & summary["policy"].isin(SHOWN)].reset_index(drop=True)
-    fig, ax = plt.subplots(figsize=(10, 5.2), facecolor=SURFACE)
+    fig, ax = plt.subplots(figsize=(10, 5.8), facecolor=SURFACE)
     ax.set_facecolor(SURFACE)
     labels = []
     for y, r in rows.iterrows():
         c = colour(r["policy"])
+        more = extra[(extra["segment"] == r["segment"]) & (extra["policy"] == r["policy"]) & extra["adds_to_compliance"]]
         if r["evidence_vs_bau"] == "within":
-            ax.plot([r["bcr_p5"], r["bcr_p95"]], [y, y], color=c, lw=2)
-            ax.plot(r["bcr"], y, "o", ms=8, color=c)
-            ax.text(r["bcr_p95"] * 1.15, y, pays_if(r["break_even_free_flow"]), va="center", fontsize=8, color=MUTED)
+            ax.plot([r["bcr_p5"], r["bcr_p95"]], [y - 0.13, y - 0.13], color=c, lw=2)
+            ax.plot(r["bcr"], y - 0.13, "o", ms=8, color=c)
+            if len(more):
+                m = more.iloc[0]
+                ax.plot([m["bcr_p5"], m["bcr_p95"]], [y + 0.17, y + 0.17], color=c, lw=1.2, ls=(0, (3, 2)))
+                ax.plot(m["bcr"], y + 0.17, "o", ms=7.5, mfc=SURFACE, mec=c, mew=1.8)
+                ax.text(max(r["bcr_p95"], m["bcr_p95"]) * 1.15, y, f"against compliance: "
+                        f"{pays_if(m['break_even_free_flow'])}", va="center", fontsize=8, color=MUTED)
+            else:
+                ax.text(r["bcr_p95"] * 1.15, y, pays_if(r["break_even_free_flow"]), va="center", fontsize=8, color=MUTED)
         else:
             low, high = model_range(r, "bcr")
             ax.plot([low * 0.985, high * 1.015], [y, y], color=c, lw=6, alpha=0.25, solid_capstyle="round")     # always visible
@@ -342,12 +449,14 @@ def chart_bcr(summary: pd.DataFrame, path: Path) -> None:
     ax.tick_params(axis="y", length=0)
     for side in ("top", "right", "left"):
         ax.spines[side].set_visible(False)
-    ax.set_xlabel("Annual benefit / annual time cost, beyond business-as-usual ISA (log scale)", color=MUTED, fontsize=9)
+    ax.set_xlabel("Annual benefit / annual lawful time cost (log scale)", color=MUTED, fontsize=9)
     ax.set_title("Caps below the limit: casualties, fuel and carbon against lawful time lost",
                  loc="left", fontsize=11, color=INK)
-    legend = [plt.Line2D([], [], color=COLOURS["cap"], marker="o", lw=2, label="Within the evidence: central, 5th-95th percentile"),
-              plt.Line2D([], [], color=COLOURS["cap"], lw=6, alpha=0.25, label="Beyond the evidence: range across models")]
-    ax.legend(handles=legend, loc="upper center", bbox_to_anchor=(0.4, -0.13), ncol=2, frameon=False, fontsize=8,
+    legend = [plt.Line2D([], [], color=COLOURS["cap"], marker="o", lw=2, label="Within the evidence, against BAU ISA: central, 5th-95th percentile"),
+              plt.Line2D([], [], color=COLOURS["cap"], marker="o", mfc=SURFACE, lw=1.2, ls=(0, (3, 2)),
+                         label="The same, against compliance (what the cap adds)"),
+              plt.Line2D([], [], color=COLOURS["cap"], lw=6, alpha=0.25, label="Beyond the evidence, against BAU ISA: range across the casualty models")]
+    ax.legend(handles=legend, loc="upper center", bbox_to_anchor=(0.4, -0.13), ncol=1, frameon=False, fontsize=8,
               labelcolor=MUTED)
     fig.tight_layout()
     fig.savefig(path, dpi=300, facecolor=SURFACE)
@@ -414,51 +523,72 @@ def main() -> int:
     low_flow, high_flow = FREE_FLOW_RANGES[focus_road]
     central_flow = FREE_FLOW_SHARE[focus_road]
 
+    increments = beyond_compliance(central)
+    increments_mc = beyond_compliance(mc)
+    flat_extra = flat_beyond_compliance(increments)
+    flat_extra_mc = flat_beyond_compliance(increments_mc)
+    extra = summarise_increments(increments, increments_mc, flat_extra, flat_extra_mc)
+    focus_extra = focus_row(increments)
+    focus_extra_mc = increments_mc[(increments_mc["segment"] == focus_road) & (increments_mc["policy"] == FOCUS[1])]
+
     vans_like_cars = tuple(replace(road, van_limit_kmh=road.limit_kmh) for road in ROAD_TYPES)
 
-    def benefit_under(assumptions):
-        return focus_row(appraise(run(distributions, baseline, assumptions), hours, traffic, baseline, values, ratios))["benefit"]
+    def case(table, cost_table=None, column="benefit"):
+        """(benefit, cost) beyond BAU and beyond compliance for the focus cap, from one appraised table."""
+        cost_table = table if cost_table is None else cost_table
+        cap, comp = focus_row(table), compliance_row(table)
+        cap_cost, comp_cost = focus_row(cost_table)["cost"], compliance_row(cost_table)["cost"]
+        return cap[column], cap_cost, cap[column] - comp[column], cap_cost - comp_cost
+
+    def under(assumptions):
+        return case(appraise(run(distributions, baseline, assumptions), hours, traffic, baseline, values, ratios))
 
     def scaled(factor):
-        """Benefit and cost if the free-flowing traffic were this many times larger: casualties do not scale."""
-        return (focus["casualty_benefit"] + (focus["fuel_benefit"] + focus["carbon_benefit"]) * factor, focus["cost"] * factor)
+        """Free-flowing traffic this many times larger: running savings and time scale, casualties do not."""
+        def one(r):
+            return r["casualty_benefit"] + (r["fuel_benefit"] + r["carbon_benefit"]) * factor, r["cost"] * factor
+        (b, c), (eb, ec) = one(focus), one(focus_extra)
+        return b, c, eb, ec
 
     def with_values(table, **changes):
-        return focus_row(appraise(table, hours, traffic, baseline, replace(values, **changes), ratios))
+        return appraise(table, hours, traffic, baseline, replace(values, **changes), ratios)
+
+    def casualty_draw(q):
+        cap = focus_mc["casualty_benefit"].quantile(q) + focus["benefit"] - focus["casualty_benefit"]
+        more = focus_extra_mc["casualty_benefit"].quantile(q) + focus_extra["benefit"] - focus_extra["casualty_benefit"]
+        return cap, focus["cost"], more, focus_extra["cost"]
 
     raw_values = read_values()
     later_fleet = with_values(run(distributions, baseline, central_assumptions, fuel_year=2035),
                               carbon_tonne=raw_values["carbon_central_2035"])
+    vans_hours = hours_table(distributions, roads=vans_like_cars)
     sens = sensitivity({
-        "Central": (focus["benefit"], focus["cost"]),
+        "Central": case(central),
         f"Free-flowing traffic {low_flow:.0%} (central {central_flow:.0%})": scaled(low_flow / central_flow),
+        "Free-flowing traffic 60%": scaled(0.6 / central_flow),
         f"Free-flowing traffic {high_flow:.0%}": scaled(high_flow / central_flow),
         "Traffic on 97 km/h roads 30% lower": scaled(0.7),
         "Traffic on 97 km/h roads 30% higher": scaled(1.3),
-        "Casualty draws: 5th percentile": (focus_mc["casualty_benefit"].quantile(0.05) + focus["benefit"] - focus["casualty_benefit"], focus["cost"]),
-        "Casualty draws: 95th percentile": (focus_mc["casualty_benefit"].quantile(0.95) + focus["benefit"] - focus["casualty_benefit"], focus["cost"]),
-        "Model A: Power Model": (focus["benefit_power"], focus["cost"]),
-        "Model A: Exponential model": (focus["benefit_exp"], focus["cost"]),
-        "Speed difference from today's mean": (benefit_under(replace(central_assumptions, reference_mean="old")), focus["cost"]),
-        "Adelaide's urban free-travel share (0.56)": (
-            benefit_under(replace(central_assumptions, free_travel_share_rural=central_assumptions.free_travel_share)), focus["cost"]),
-        "Brenac's flatter risk curve": (benefit_under(replace(central_assumptions, urban_curve="brenac2015_exponential_coef",
-                                                              rural_curve="brenac2015_exponential_coef")), focus["cost"]),
-        "Previous TAG casualty values (RAS4001)": (
-            focus_row(appraise(casualties, hours, traffic, baseline, load_values("previous"), ratios))["benefit"], focus["cost"]),
-        "Injuries never reported to police counted": (
-            focus_row(appraise(casualties, hours, traffic, baseline, values, ratios, include_unreported=True))["benefit"],
-            focus["cost"]),
-        "Time gained by speeding counted": (focus["benefit"], focus_row(all_time)["cost"]),
-        "Vans have the car limit": (focus_row(appraise(run(distributions, baseline, central_assumptions, roads=vans_like_cars),
-                                                       hours_table(distributions, roads=vans_like_cars), traffic, baseline,
-                                                       values, ratios))["benefit"],
-                                    focus_row(appraise(casualties, hours_table(distributions, roads=vans_like_cars), traffic,
-                                                       baseline, values, ratios))["cost"]),
-        "Fuel and carbon left out": (focus["casualty_benefit"], focus["cost"]),
-        "Fleet, prices and carbon value of 2035": (later_fleet["benefit"], focus["cost"]),
-        "Carbon at TAG's low value": (with_values(casualties, carbon_tonne=raw_values["carbon_low_2023"])["benefit"], focus["cost"]),
-        "Carbon at TAG's high value": (with_values(casualties, carbon_tonne=raw_values["carbon_high_2023"])["benefit"], focus["cost"]),
+        "Casualty draws: 5th percentile": casualty_draw(0.05),
+        "Casualty draws: 95th percentile": casualty_draw(0.95),
+        "Model A: Power Model": case(central, column="benefit_power"),
+        "Model A: Exponential model": case(central, column="benefit_exp"),
+        "Speed difference from today's mean": under(replace(central_assumptions, reference_mean="old")),
+        "Adelaide's urban free-travel share (0.56)": under(
+            replace(central_assumptions, free_travel_share_rural=central_assumptions.free_travel_share)),
+        "Brenac's flatter risk curve": under(replace(central_assumptions, urban_curve="brenac2015_exponential_coef",
+                                                     rural_curve="brenac2015_exponential_coef")),
+        "Previous TAG casualty values (RAS4001)": case(appraise(casualties, hours, traffic, baseline, load_values("previous"), ratios)),
+        "Injuries never reported to police counted": case(
+            appraise(casualties, hours, traffic, baseline, values, ratios, include_unreported=True)),
+        "Time gained by speeding counted": case(central, all_time),
+        "Vans have the car limit": case(appraise(run(distributions, baseline, central_assumptions, roads=vans_like_cars),
+                                                 vans_hours, traffic, baseline, values, ratios),
+                                        appraise(casualties, vans_hours, traffic, baseline, values, ratios)),
+        "Fuel and carbon left out": case(central, column="casualty_benefit"),
+        "Fleet, prices and carbon value of 2035": case(later_fleet, central),
+        "Carbon at TAG's low value": case(with_values(casualties, carbon_tonne=raw_values["carbon_low_2023"])),
+        "Carbon at TAG's high value": case(with_values(casualties, carbon_tonne=raw_values["carbon_high_2023"])),
     })
 
     # Share of the 2035 target. BAU ISA is measured against today; the others against BAU ISA.
@@ -482,8 +612,21 @@ def main() -> int:
                 summary[summary["policy"] == "compliance"]["ksi_prevented"].sum(), *compliance_mc.quantile([0.05, 0.95])),
             f"{POLICY_NAMES[FOCUS[1]]} on {focus_road}, beyond business as usual": (
                 focus_ksi, *focus_ksi_mc.quantile([0.05, 0.95])),
+            f"{POLICY_NAMES[FOCUS[1]]} on {focus_road}, beyond compliance": (
+                focus_extra["ksi_prevented"], *focus_extra_mc["ksi_prevented"].quantile([0.05, 0.95])),
         },
     }
+
+    # Scotland's NSMR counts all travel time, as a lower limit for every vehicle would remove it. The same
+    # convention here: the focus cap's casualty value against all time lost, lawful or gained by speeding.
+    all_time_focus = focus_row(all_time)
+    running = all_time_focus["fuel_benefit"] + all_time_focus["carbon_benefit"]
+    nsmr = pd.DataFrame([{
+        "segment": focus_road, "policy": FOCUS[1], "casualty_benefit": all_time_focus["casualty_benefit"],
+        "casualty_benefit_power": all_time_focus["benefit_power"] - running,
+        "casualty_benefit_exp": all_time_focus["benefit_exp"] - running,
+        "time_cost": all_time_focus["time_cost"], "cost": all_time_focus["cost"],
+        "lawful_time_cost": focus["time_cost"], "lawful_cost": focus["cost"]}])
 
     summary.to_parquet(RESULTS / "appraisal.parquet", index=False, compression="zstd")
     sens.to_parquet(RESULTS / "appraisal_sensitivity.parquet", index=False, compression="zstd")
@@ -491,13 +634,16 @@ def main() -> int:
     bound.to_parquet(RESULTS / "appraisal_bound.parquet", index=False, compression="zstd")
     compliance_all_time[["segment", "benefit", "cost", "net", "break_even_free_flow"]].to_parquet(
         RESULTS / "appraisal_all_time.parquet", index=False, compression="zstd")
+    nsmr.to_parquet(RESULTS / "appraisal_all_time_cap.parquet", index=False, compression="zstd")
+    extra.to_parquet(RESULTS / "appraisal_beyond_compliance.parquet", index=False, compression="zstd")
     pd.DataFrame([{"row": name, "ksi": ksi, "p5": p5, "p95": p95, "share": ksi / target["required"],
                    "required": target["required"], "baseline": target["baseline"]}
                   for name, (ksi, p5, p95) in target["rows"].items()]).to_parquet(
         RESULTS / "appraisal_target.parquet", index=False, compression="zstd")
-    chart_bcr(summary, FIGURES / "rq3_benefit_cost_ratio.png")
+    chart_bcr(summary, extra, FIGURES / "rq3_benefit_cost_ratio.png")
     chart_sensitivity(sens, FIGURES / "rq3_cap80_sensitivity.png")
     print_findings(summary, values, traffic, ratios, baseline, compliance_all_time, sens, target, bound, flat)
+    print_beyond_compliance(extra, sens, nsmr)
     print(f"\nWrote {len(summary)} rows to results/appraisal.parquet and two charts to figures/")
     return 0
 

@@ -225,3 +225,21 @@ def break_even_free_flow(casualty_value, running_saving_all_free, cost_all_free)
     """
     net_cost = np.asarray(cost_all_free, dtype=float) - np.asarray(running_saving_all_free, dtype=float)
     return np.divide(casualty_value, net_cost, out=np.full_like(net_cost, np.inf), where=net_cost > 0)
+
+
+def cap_beyond_compliance(road: RoadType, cap_kmh: float) -> bool:
+    """Whether a cap adds anything to posted-limit compliance on this road type.
+
+    Compliance holds each vehicle to its own limit, at no lawful time cost. A cap added to it holds
+    each vehicle to the lower of the two. If the cap is at or above every vehicle's limit, that is
+    compliance itself, so the cap adds nothing (False). If it is at or below every vehicle's limit, it
+    is the cap alone, so what it adds is the cap's result minus compliance's (True). Within
+    SAME_SPEED_KMH counts as at the limit. A cap between a van's and a car's limit fits neither rule
+    and is refused; none of the modelled caps falls there.
+    """
+    limits = (road.limit_kmh, road.van_limit_kmh)
+    if cap_kmh >= max(limits) - SAME_SPEED_KMH:
+        return False
+    if cap_kmh <= min(limits) + SAME_SPEED_KMH:
+        return True
+    raise ValueError(f"a {cap_kmh} km/h cap lies between the van and car limits on {road.segment}")

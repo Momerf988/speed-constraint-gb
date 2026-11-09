@@ -190,3 +190,43 @@ def test_values_file_matches_dfts_files():
     with open(VALUES_FILE, newline="") as f:
         saved = {row["value_id"]: float(row["value"]) for row in csv.DictReader(f)}
     assert extracted == pytest.approx(saved)
+
+
+def test_a_cap_adds_to_compliance_only_below_every_vehicles_limit():
+    from model.appraisal import cap_beyond_compliance
+    assert not any(cap_beyond_compliance(URBAN_32, cap) for cap in (48, 60, 80, 97))
+    assert [cap_beyond_compliance(URBAN_48, cap) for cap in (48, 60, 80, 97)] == [False, False, False, False]
+    assert [cap_beyond_compliance(RURAL_97, cap) for cap in (48, 60, 80, 97)] == [True, True, True, False]
+    assert all(cap_beyond_compliance(MOTORWAY, cap) for cap in (48, 60, 80, 97))
+    with pytest.raises(ValueError):
+        cap_beyond_compliance(RURAL_97, 90)     # between the van's 80 km/h and the car's 97 km/h
+
+
+def test_beyond_compliance_is_the_cap_minus_compliance_where_it_binds_and_nothing_elsewhere():
+    import pandas as pd
+    from analysis.rq3 import ADDITIVE, beyond_compliance
+    rows = []
+    for segment, policy, scale in ((RURAL_97.segment, "compliance", 1.0), (RURAL_97.segment, "cap_80", 3.0),
+                                   (RURAL_97.segment, "cap_97", 0.5), (MOTORWAY.segment, "compliance", 2.0),
+                                   (MOTORWAY.segment, "cap_97", 5.0)):
+        row = {"segment": segment, "policy": policy, "free_flow_share": 0.7}
+        row |= {column: scale * (i + 1) for i, column in enumerate(ADDITIVE)}
+        if policy == "compliance":
+            row |= {"time_cost": 0.0, "capital_cost": 0.0, "cost": 0.0}
+        rows.append(row)
+    table = pd.DataFrame(rows)
+    out = beyond_compliance(table).set_index(["segment", "policy"])
+    source = table.set_index(["segment", "policy"])
+    for segment, cap in ((RURAL_97.segment, "cap_80"), (MOTORWAY.segment, "cap_97")):
+        for column in ADDITIVE:
+            assert out.loc[(segment, cap), column] == pytest.approx(
+                source.loc[(segment, cap), column] - source.loc[(segment, "compliance"), column])
+    assert all(out.loc[(RURAL_97.segment, "cap_97"), column] == 0 for column in ADDITIVE)
+    r = out.loc[(RURAL_97.segment, "cap_80")]
+    assert r["bcr"] == pytest.approx(r["benefit"] / r["cost"])
+    assert r["net"] == pytest.approx(r["benefit"] - r["cost"])
+
+
+def test_override_shares_are_the_isa_uk_trial_shares_of_distance():
+    # Lai and Carsten (2012), Table 5: share of distance driven with ISA overridden, 20, 30, 60 and 70 mph roads
+    assert [road.override_share for road in ROAD_TYPES] == [0.133, 0.081, 0.013, 0.163]
