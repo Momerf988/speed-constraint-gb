@@ -12,7 +12,9 @@ official values for a prevented casualty and for an hour of travel time.
 **Status:** Phases 1–8 complete; Phase 9 under way (CI/CD done, Azure deployment next). The
 casualty, appraisal and Wales results were revised in November 2026 after an examiner-style review:
 vans now have their own speeds and limits, the baseline represents the ISA being mandated more
-faithfully, fuel and carbon are counted, and every headline is reported with the range across models. All 37.5 million STATS19 rows (1979–2025) are loaded into
+faithfully, fuel and carbon are counted, and every headline is reported with the range across models.
+A second round judged every cap against compliance, which it contains, took the ISA override shares
+from the trial paper itself, and made the Wales estimate rest on tests that treat Wales as one place. All 37.5 million STATS19 rows (1979–2025) are loaded into
 PostgreSQL and modelled with dbt into a tested star schema, joined to DfT traffic and
 free-flow speed statistics. A casualty model in Python estimates the deaths and injuries each
 policy would prevent, with Monte Carlo ranges and an explicit label wherever a scenario goes
@@ -37,13 +39,13 @@ DfT files → PostgreSQL (raw) → dbt: staging → intermediate → star schema
 91 data tests run on every build: key uniqueness, fact-to-dimension relationships, allowed
 values, row conservation from raw to facts and into the model's inputs, the rules of DfT's
 severity adjustment, and reconciliation against DfT's published casualty, traffic and speed
-figures. 114 pytest tests cover the models, the appraisal and the causal and machine-learning code.
+figures. 119 pytest tests cover the models, the appraisal and the causal and machine-learning code.
 
 ## Continuous integration and delivery
 
 Every push runs three jobs on GitHub Actions (`.github/workflows/ci.yml`):
 
-- **Python tests:** all 114; the one that re-reads DfT's raw appraisal spreadsheet is skipped,
+- **Python tests:** all 119; the one that re-reads DfT's raw appraisal spreadsheet is skipped,
   because CI does not hold it.
 - **The whole pipeline on a sample:** raw load, keys, code lookups, traffic, speeds, every dbt
   model and 89 of the 91 data tests, then the Parquet export, in a throwaway Postgres. The
@@ -76,35 +78,40 @@ motorcycle), records why, and still stops on any other conflict.
 ![Deaths prevented beyond business-as-usual ISA](figures/rq2_rq4_deaths_prevented.png)
 
 Each policy is measured against business as usual: the ISA that GB has decided to mandate,
-fitted to every car and van. Following the regulation and TRL's 2024 appraisal for DfT, half the
-fleet has a speed control function and half a warning only. Drivers switch it off for some
-journeys and override it, and they override in order to speed. Figures are deaths a year at
-2022–2024 casualty levels, given as central [5th–95th percentile of 10,000 Monte Carlo draws]
-{lowest–highest across the models}.
+fitted to every car and van. Half the fleet has a speed control function and half a warning only,
+TRL's implicit assumption in its 2024 appraisal for DfT, since makers' choices are not published.
+Drivers switch it off for some journeys and override it, in order to speed, for the share of
+distance the ISA-UK trials recorded on each road type (Lai and Carsten 2012). Figures are deaths a
+year at 2022–2024 casualty levels, given as central [5th–95th percentile of 10,000 Monte Carlo
+draws] {lowest–highest across the models}.
 
-- **Holding every vehicle to its legal limit (RQ4)** would prevent 213 more deaths a year
-  [131–285] {57–259} on the four road types with DfT speed data, which have 71% of GB deaths.
-  60% of that is on urban roads, 104 [50–163] on 48 km/h roads alone. The mandated ISA itself
-  prevents 69 [28–143] {21–124}.
+- **Holding every vehicle to its legal limit (RQ4)** would prevent 203 more deaths a year
+  [128–284] {54–255} on the four road types with DfT speed data, which have 71% of GB deaths.
+  65% of that is on urban roads, 108 [56–168] on 48 km/h roads alone. The mandated ISA itself
+  prevents 80 [29–147] {23–140}.
 - **Vans have their own limit.** Most vans are limited to 80 km/h on single carriageways, and 53%
   of them drive faster than that. DfT publishes no van speed bands for those roads, because its
   counters cannot weigh a van, so the model moves the car distribution to the published van mean.
-- **A cap at 80 km/h on 97 km/h single carriageways (RQ2)** would prevent 152 more deaths a year
-  [105–181] {60–222}, twice what compliance achieves there, because 56% of cars there drive faster
-  than 80 km/h. That is close to Kloeden's estimate for an 80 km/h limit on rural South Australian
-  roads.
+- **A cap at 80 km/h on 97 km/h single carriageways (RQ2)** would prevent 137 more deaths a year
+  [98–173] {57–203} beyond business as usual, because 56% of cars there drive faster than 80 km/h.
+  But it contains compliance, which prevents 60 of those at no lawful time cost; what the cap adds
+  beyond compliance is 77 [56–88] {39–110}.
 - **Lower caps, and any cap on motorways, lie beyond the evidence.** They cut mean speeds by
   15–62 km/h, while the speed-risk models were fitted on changes of at most 14 km/h and initial
-  speeds up to 95 km/h. Only the range across models is given for them (for example 179–367
+  speeds up to 95 km/h. Only the range across models is given for them (for example 164–363
   deaths a year for a 60 km/h cap on 97 km/h roads).
 - **Model choice matters more than parameter values.** Brenac et al.'s flatter individual risk
-  curve cuts the compliance estimate from 213 to 57, far below the Monte Carlo's 5th percentile.
+  curve cuts the compliance estimate from 203 to 54, far below the Monte Carlo's 5th percentile.
   `make structural` gives every headline its central value, Monte Carlo range and structural
   range, and names the model behind each extreme.
-- **Checked against published work, honestly.** With every car or van collision allowed to respond
-  (f = 1), compliance prevents 36% of injuries on 48 km/h roads, against ISA-UK's 40%; at the
-  central f it is 20%. At the central f, deaths prevented match Sweden's 25% (24%). No single
-  value of f matches both, so validation tests plausibility rather than picking a model.
+- **Checked against published work by replicating their methods.** Set up as ISA-UK was (every
+  collision responding), compliance prevents 34% of injuries on 48 km/h roads against ISA-UK's
+  40%; under TRL's assumptions mandated ISA prevents 19% of deaths in car collisions against TRL's
+  16%; Sweden's 25% came from the Exponential model, which gives 16% here. Agreement under a
+  study's own method checks the code, not the free-travel share, which stays a judgement. One
+  check does not agree: never switched off, overridable speed control here achieves 72% of
+  mandatory ISA's benefit against 42% in the ISA-UK trials, so the baseline may be too strong and
+  the gains beyond it too small.
 
 Limits: DfT surveys speeds where traffic flows freely, which overstates speeding; the risk curves,
 and the shares of crashes involving a free-travelling vehicle (56% urban, 80% rural), come from
@@ -124,20 +131,29 @@ limit is not counted, each vehicle against its own limit. "Ratio" is annual bene
 time cost, with no present values or hardware cost.
 
 - **Holding vehicles to their limits costs no lawful time**, so it pays wherever it prevents
-  casualties: £2.13bn a year [£1.33–3.16bn] {£0.48–2.51bn} on the four road types.
-- **An 80 km/h cap on 97 km/h single carriageways pays:** £784m of casualties, £58m of fuel and
-  £62m of carbon, against £489m of lawful car time (a van above 80 km/h was already breaking its
-  limit). The ratio is 1.83 [1.27–2.36] {0.85–2.63}. It fails only under Brenac's flatter curve,
-  and pays even if all traffic on those roads flows freely.
-- **A flat limiter on every road does not pay.** At 80 km/h on all four road types the ratio is
-  0.58 [0.49–0.65] {0.45–0.68}, because motorway time dominates. At 97 km/h it is about break-even,
-  1.06 [0.86–1.23] {0.81–1.20}, and is worth less than compliance.
+  casualties: £2.10bn a year [£1.33–3.18bn] {£0.46–2.50bn} on the four road types.
+- **Every cap below a vehicle's limit contains compliance**, so it is judged by what it adds to
+  compliance (an incremental appraisal), with the comparison against business as usual as context.
+- **An 80 km/h cap on 97 km/h single carriageways is close to break-even beyond compliance.**
+  Against business as usual it returns 1.67 [1.20–2.27] {0.81–2.43}, but much of that is
+  compliance, which holds speeding cars to 97 km/h and vans to 80 km/h for free. What the cap
+  adds is £403m of casualties and £44m of fuel and carbon against £494m of lawful time: a ratio
+  of 0.90 [0.64–1.17] {0.49–1.32}. It pays only if under 63% of traffic on those roads flows
+  freely (70% assumed).
+- **A flat limiter on every road does not pay.** Beyond compliance it returns 0.57 [0.53–0.61]
+  at 97 km/h and 0.42 [0.37–0.46] at 80 km/h. Against business as usual the 97 km/h limiter
+  looks like break-even (0.99), but only by bundling free compliance on single carriageways with
+  a motorway cap that returns 0.72–0.78 on its own.
 - **Four caps fail whatever their safety effect.** Even if they prevented every casualty on the
   road type, a 48 km/h cap on 97 km/h roads and motorway caps at 48, 60 and 80 km/h could not
   repay the time they cost, with or without unreported injuries.
+- **Scotland's appraisal agrees.** Counting all travel time, as Scotland's National Speed
+  Management Review does, the 80 km/h cap's casualty value is 0.94 of the time it removes (1.00
+  with the NSMR's kind of model), against the NSMR's 0.99: a consistency check, not a validation.
 - **Against the 2035 target** of 65% fewer KSI than 2022–2024 (18,801 fewer a year), the mandated
-  ISA in every vehicle would deliver 6% [3–14%] {2–12%} and compliance a further 23% [14–34%]
-  {5–27%}. These are full-fleet steady states at 2022–2024 levels, not forecasts.
+  ISA in every vehicle would deliver 6% [2–14%] {2–12%} and compliance a further 22% [14–35%]
+  {5–27%}; the 80 km/h cap adds 3.5% beyond compliance. These are full-fleet steady states at
+  2022–2024 levels, not forecasts.
 
 Limits: no published figure gives the share of traffic that flows freely (70% is assumed on
 97 km/h roads and motorways, 40% on urban roads), so the break-even share is reported; DfT
@@ -154,19 +170,30 @@ the same roads in England, police force by police force, from January 2022 to De
 (Poisson regression with force and month fixed effects). It replicates and extends Xu (2026), who
 found 19.4% fewer pedestrian and cyclist casualties with a similar design.
 
-- Casualties on these Welsh roads fell 17.5% more than England's change implies: a rate ratio of
-  0.825 (95% interval 0.687–0.991). Adjusted KSI fell 14.2% more (0.858, 0.747–0.985).
+Three forces have known recording problems. DfT flags Staffordshire and Avon and Somerset, so
+they are left out of every main estimate and test; Dyfed-Powys moved to injury-based severity
+recording in May 2023, so it is left out of every KSI result. Results with every force are
+reported as sensitivities. These rules come from published lists, but were applied after the
+first results were seen.
+
+- Casualties on these Welsh roads fell 16.6% more than England's change implies: a rate ratio of
+  0.834. Adjusted KSI fell 16.7% more (0.833). Clustered 95% intervals (0.696–1.000 and
+  0.714–0.973) treat the four Welsh forces as independent, so they are too narrow.
+- **Wales as one place.** Refitting the model with each English force in turn as if it alone had
+  the policy, Wales's change is the largest of the 17 comparably sized units, the strongest
+  result that test can give; with 17 units the smallest possible p is 0.06, so chance cannot yet
+  be ruled out at the 5% level. Permutation tests over sets of four English forces give
+  p < 0.001, but they assume the Welsh forces move independently, which they do not.
 - **The before window was chosen after seeing the pre-trends**, so other readings are reported
-  beside it. If Wales's 2017–2023 decline relative to England had carried on, the ratio is 0.849
-  (0.670–1.075); counting 2017–2019 as "before" gives 0.748.
-- **How unusual is it, with four Welsh forces?** 3.8% of all 82,251 sets of four English forces
-  changed as much. Two English forces have incomplete records by DfT's own account; without them,
-  none did (p < 0.001). A synthetic control puts Wales 28% below its English counterpart, but 5 of
-  39 English forces depart as much from theirs (p = 0.15). Leaving out North Wales gives 0.908.
-- **Displacement or a Wales-wide shift?** Other Welsh roads rose relative to England (1.065,
-  0.971–1.169). Across all Welsh roads together, the net change is 0.944 (0.812–1.096); against
-  other Welsh roads, the affected roads fell 22.6% (triple difference).
-- Under the Exponential speed–risk model, the fall corresponds to 2.9–5.6 km/h lower mean speeds,
+  beside it. If Wales's 2017–2023 decline relative to England had carried on, the ratio is 0.860
+  (0.680–1.087); counting 2017–2019 as "before" gives 0.752.
+- **A synthetic control** puts Wales at 0.779 of its English counterpart, but 8 of 37 English
+  forces depart as much from theirs (p = 0.24). With every force it gives 0.724, but that carries
+  Staffordshire's recording recovery (weight 0.061, after-period index 262).
+- **Displacement?** Other Welsh roads were 8.1% higher than England's change implies (an interval
+  that includes no change), mostly Dyfed-Powys: without it, 2.7% for all casualties, and for KSI
+  0.984 against 1.087 with it. Across all Welsh roads together, KSI fell 10% (0.899, 0.817–0.990).
+- Under the Exponential speed–risk model, the fall corresponds to 2.7–5.3 km/h lower mean speeds,
   depending on the coefficient: an illustration, not a test.
 
 So the direction holds under every reading, but the significance depends on the test: the evidence
@@ -216,12 +243,12 @@ make export     # export the marts to Parquet in data/marts/
 make docs       # browse the documentation and lineage graph
 make rq1        # RQ1 rates and charts, written to figures/
 make values     # extract DfT's appraisal values into model/parameters/appraisal_values.csv
-make test       # run the 114 model tests
+make test       # run the 119 model tests
 make speeds     # speed distributions from DfT's bands, checked against DfT's own figures
 make rq2        # RQ2 and RQ4: casualties prevented by each policy, with Monte Carlo ranges
 make rq3        # RQ3: casualties, fuel, carbon and time cost of each policy, with the bound
 make structural # every headline: central, Monte Carlo range and range across models
-make wales      # Wales 32 km/h default: difference-in-differences, synthetic control, permutation tests
+make wales      # Wales 32 km/h default: difference-in-differences, single-unit placebo, synthetic control
 make tune       # tune the severity model on 2021-2024 (about 10 minutes)
 make severity   # severity model: XGBoost with SHAP and limit contrasts, cross-validated by collision
 make holdout    # severity model tested on 2025, a year it never saw, overall and by group
