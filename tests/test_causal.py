@@ -6,7 +6,7 @@ import pytest
 
 from model.causal import (ddd_poisson, did_poisson, did_poisson_trend, event_study, implied_speed_change_kmh,
                           permutation_test, ratio_of_ratios, size_matched_permutation, synthetic_control,
-                          synthetic_placebo)
+                          single_unit_placebo, synthetic_placebo)
 
 
 def simulated_panel(rate_ratio: float, seed: int = 1) -> pd.DataFrame:
@@ -146,3 +146,15 @@ def test_size_matched_permutation_keeps_only_sets_of_similar_size():
     assert every["sets"] == 6                     # all pairs of four controls
     assert matched["sets"] == 1                   # only c3 and c4 together are about as big as t1 and t2
     assert matched["ratio_of_ratios"] == pytest.approx(0.8)
+
+
+def test_single_unit_placebo_ranks_a_clear_effect_first_and_cannot_go_below_one_over_units():
+    result = single_unit_placebo(simulated_panel(0.6), "casualties", "treated", "after", tolerance=0.5)
+    assert result["rate_ratio"] == pytest.approx(0.6, abs=0.03)
+    assert result["all"]["rank"] == 1 and result["all"]["units"] == 21
+    assert result["all"]["p_value"] == pytest.approx(1 / 21) == result["all"]["smallest_p"]
+    assert result["similar"]["units"] <= 21
+
+
+def test_single_unit_placebo_finds_nothing_when_there_is_nothing():
+    assert single_unit_placebo(simulated_panel(1.0), "casualties", "treated", "after")["all"]["p_value"] > 0.2

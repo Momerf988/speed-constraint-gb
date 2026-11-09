@@ -214,3 +214,35 @@ def size_matched_permutation(totals: pd.DataFrame, treated_units, control_units,
     keep = np.ones(len(sets), dtype=bool) if tolerance is None else np.abs(set_before / treated_before - 1) <= tolerance
     p_value = float(np.mean(np.abs(np.log(placebo[keep])) >= abs(np.log(actual))))
     return {"ratio_of_ratios": actual, "p_value": p_value, "sets": int(keep.sum())}
+
+
+def single_unit_placebo(panel: pd.DataFrame, outcome: str, treated: str, post: str, tolerance: float | None = None,
+                        unit: str = "police_force_code") -> dict:
+    """Placebo in space with the treated group as one unit: how does it rank among single control units?
+
+    The treated group's rate ratio comes from the full panel. Then each control unit in turn is
+    treated as if it alone had the policy, and the model is refitted on the control units only.
+    Unlike a permutation over sets of control units, this does not assume the treated units' shocks
+    are independent of one another: the treated group is one draw, compared with single units.
+    The p-value counts the treated group itself: (1 + controls at least as far from 1, on the log
+    scale) / (1 + controls), so with n controls it can never fall below 1 / (n + 1). With tolerance,
+    a second test keeps only control units whose before-period total is within that fraction of the
+    treated group's.
+    """
+    actual = did_poisson(panel, outcome, treated, post, unit)["rate_ratio"]
+    controls = panel[~panel[treated]]
+    before = controls[~controls[post]].groupby(unit)[outcome].sum()
+    treated_before = panel[panel[treated] & ~panel[post]][outcome].sum()
+    placebo = pd.Series({u: did_poisson(controls.assign(placebo_treated=controls[unit] == u), outcome,
+                                        "placebo_treated", post, unit)["rate_ratio"] for u in before.index})
+
+    def test(units) -> dict:
+        as_far = int((np.abs(np.log(placebo[units])) >= abs(np.log(actual))).sum())
+        return {"p_value": (1 + as_far) / (1 + len(units)), "rank": 1 + as_far, "units": 1 + len(units),
+                "smallest_p": 1 / (1 + len(units))}
+
+    out = {"rate_ratio": actual, "all": test(list(before.index)), "placebo": placebo.to_dict()}
+    if tolerance is not None:
+        similar = list(before.index[(before / treated_before - 1).abs() <= tolerance])
+        out["similar"] = test(similar) | {"tolerance": tolerance}
+    return out
