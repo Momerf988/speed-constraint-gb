@@ -314,7 +314,7 @@ def chart_deaths(summary: pd.DataFrame, path: Path) -> None:
                  loc="left", fontsize=12, color=INK, pad=28)
     legend = [
         plt.Line2D([], [], color=COLOURS["compliance"], marker="o", lw=2, label="Legal-limit compliance"),
-        plt.Line2D([], [], color=COLOURS["cap"], marker="o", lw=2, label="Flat cap"),
+        plt.Line2D([], [], color=COLOURS["cap"], marker="o", lw=2, label="Cap"),
         plt.Line2D([], [], color=MUTED, marker=">", markerfacecolor=SURFACE, lw=0, label="Lower bound (curve cut short)"),
         plt.Line2D([], [], color=MUTED, lw=6, alpha=0.25, label="Beyond the evidence: range across models"),
     ]
