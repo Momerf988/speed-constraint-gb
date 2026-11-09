@@ -10,10 +10,12 @@ stack every extreme at once, which would describe no model anyone holds.
     what speed is measured from   the new mean, today's mean, or the absolute urban curve
     the casualty model            Model B, or Model A in its Power or Exponential form
     the speed distribution        empirical, normal or lognormal
-    how ISA is used               override at random, every car with speed control, every car with a warning
+    how ISA is used               override at random, override at the trial's own rate, every car with speed
+                                  control, every car with a warning
     what ISA shows a van          the posted limit, or the van's own
 
-Run after rq2 and rq3, whose Monte Carlo draws it reads. Writes results/structural_range.parquet.
+Run after rq2 and rq3, whose Monte Carlo draws it reads. Writes results/structural_range.parquet, and every
+variant's headlines to results/structural_variants.parquet.
 
 Usage:
     python -m analysis.structural
@@ -33,7 +35,7 @@ from analysis.rq3 import (MARTS, RESULTS, TARGET_CUT, appraise, beyond_complianc
 from model.appraisal import FREE_FLOW_SHARE, ksi_from_casualties, load_values
 from model.casualties import Assumptions
 from model.run import load_inputs, run, speed_distributions
-from model.scenarios import IsaUse
+from model.scenarios import TRIAL_SHARE_OVER_LIMIT, IsaUse
 
 RURAL, MOTORWAY = "97 km/h single carriageways", "113 km/h motorways"
 MODEL_SUFFIX = {"preferred": "", "power": "_power", "exp": "_exp"}
@@ -194,6 +196,8 @@ def main() -> int:
         "a normal shape": headlines(appraised(d=speed_distributions(speeds, "normal")), baseline),
         "a lognormal shape": headlines(appraised(d=speed_distributions(speeds, "lognormal")), baseline),
         "random override": headlines(appraised(isa=replace(central_isa, override_targets_speeding=False)), baseline),
+        "override at the trial's own rate": headlines(appraised(isa=replace(central_isa, override_base=TRIAL_SHARE_OVER_LIMIT)),
+                                                      baseline),
         "speed control in every vehicle": headlines(appraised(isa=replace(central_isa, speed_control_share=1.0)), baseline),
         "a warning in every vehicle": headlines(appraised(isa=replace(central_isa, speed_control_share=0.0)), baseline),
         "ISA showing a van its own limit": headlines(appraised(isa=replace(central_isa, vans_read_own_limit=True)), baseline),
@@ -207,6 +211,8 @@ def main() -> int:
     table["mc_p5"] = [spreads[h][0] for h in table["headline"]]
     table["mc_p95"] = [spreads[h][1] for h in table["headline"]]
     table.to_parquet(RESULTS / "structural_range.parquet", index=False, compression="zstd")
+    pd.DataFrame([{"variant": name, "headline": h, "value": v} for name, result in ({"central": central} | variants).items()
+                  for h, v in result.items()]).to_parquet(RESULTS / "structural_variants.parquet", index=False, compression="zstd")
 
     print("Every headline: central [5th to 95th percentile of the Monte Carlo] {lowest to highest across the models}")
     for _, r in table.iterrows():

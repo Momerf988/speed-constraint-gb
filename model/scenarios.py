@@ -29,7 +29,10 @@ How GB's ISA is used (IsaUse):
     o_v    share of driving at speed v that is overridden. Drivers override in order to speed, so
            all override falls above the limit: o_v = min(1, o / share of driving above the limit),
            where o is the share of distance driven with ISA overridden in the ISA-UK trials, by
-           speed limit (Lai and Carsten 2012, Table 5 and Fig. 8)
+           speed limit (Lai and Carsten 2012, Table 5 and Fig. 8). Centrally the share above the
+           limit is today's, from the DfT surveys; a structural variant takes the trial's own share
+           instead (TRIAL_SHARE_OVER_LIMIT), which is lower, because the survey sites are chosen for
+           free flow and the trials included congested driving
     w      share of the fleet with speed control; the rest has a warning only
     kappa  what a warning achieves, relative to speed control used the same way
 """
@@ -74,6 +77,17 @@ CAPS_KMH = (48, 60, 80, 97)
 POLICIES = ("today", "bau_isa", "compliance") + tuple(f"cap_{cap}" for cap in CAPS_KMH)
 ISA_SWITCHED_OFF_SHARE = 0.30   # judgement, informed by Day et al. (2023): of 20 drivers, 3 never use it, 11 sometimes
 
+# Share of distance the ISA-UK drivers drove over the limit with ISA off (Lai and Carsten 2012, Fig. 6, Phase 1),
+# by speed limit. Read from the bar chart, to about ±1 point: the chart's axis was calibrated on Phase 2, whose
+# values Table 5 prints exactly (its "speeding observed in this trial" column is the ISA-active phase).
+# Only the structural variant "override at the trial's own rate" uses these.
+TRIAL_SHARE_OVER_LIMIT = {
+    "32 km/h roads": 0.43,
+    "48 km/h roads": 0.40,
+    "97 km/h single carriageways": 0.07,
+    "113 km/h motorways": 0.31,
+}
+
 
 @dataclass(frozen=True)
 class IsaUse:
@@ -84,6 +98,7 @@ class IsaUse:
     overrides: dict[str, float] | None = None   # o by segment; None = the ISA-UK trial shares in ROAD_TYPES
     override_targets_speeding: bool = True      # False = override falls at random, on every speed alike
     vans_read_own_limit: bool = False           # True = ISA on a van shows the van's limit, not the posted one
+    override_base: dict[str, float] | None = None   # what o is divided by, by segment; None = today's share above the limit
 
     @classmethod
     def central(cls) -> "IsaUse":
@@ -138,7 +153,7 @@ def held_to_limit(today: SpeedDistribution, road: RoadType, isa: IsaUse, vehicle
     if not isa.override_targets_speeding:
         return isa.effect * isa_working_share(road, isa.switched_off, override)
     above = today.speeds_kmh > isa.limit_read(road, vehicle)
-    share_above = today.probabilities[above].sum()
+    share_above = today.probabilities[above].sum() if isa.override_base is None else isa.override_base[road.segment]
     overridden = np.where(above, min(1.0, override / share_above) if share_above > 0 else 0.0, 0.0)
     return isa.effect * (1 - isa.switched_off) * (1 - overridden)
 

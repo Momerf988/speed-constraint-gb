@@ -32,7 +32,7 @@ import matplotlib.pyplot as plt
 from model.appraisal import SAME_SPEED_KMH
 from model.casualties import Assumptions
 from model.run import PREVENTED_COLUMNS, SAVED_COLUMNS, load_inputs, run, speed_distributions, worse
-from model.scenarios import ROAD_TYPES, IsaUse, apply_policy, held_to_limit
+from model.scenarios import ROAD_TYPES, TRIAL_SHARE_OVER_LIMIT, IsaUse, apply_policy, held_to_limit
 from model.uncertainty import N_DRAWS, SEED, monte_carlo, percentiles
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -190,6 +190,9 @@ def validate(runs: dict[str, pd.DataFrame], baseline: pd.DataFrame) -> pd.DataFr
         absolute, absolute_all_responding  the absolute urban curve, as ISA-UK used on 48 km/h roads
         speed_control, warning_only        one kind of ISA in every car, switched off as centrally
         speed_control_on, warning_only_on  the same, never switched off, as in the ISA-UK trials
+        speed_control_trial, speed_control_on_trial
+                                           speed control, with override at the trial's own rate
+                                           (o divided by the trial's share over the limit, not today's)
         trl_method                         never switched off and f = 1, as TRL (2024) assumed
     """
     central, all_responding = runs["central"], runs["all_responding"]
@@ -246,6 +249,9 @@ def validate(runs: dict[str, pd.DataFrame], baseline: pd.DataFrame) -> pd.DataFr
     trial = "never switched off, as in the ISA-UK trials"
     rows.append(row("ISA with speed control: KSI benefit / mandatory ISA's", isa_share(runs["speed_control"]), np.nan,
                     isa_share(runs["speed_control_on"]), trial, LAI_CHOSEN_TO_UNIVERSAL,
+                    "Lai et al. (2012), voluntary ISA, injury accidents"))
+    rows.append(row("The same, override at the trial's own rate", isa_share(runs["speed_control_trial"]), np.nan,
+                    isa_share(runs["speed_control_on_trial"]), trial, LAI_CHOSEN_TO_UNIVERSAL,
                     "Lai et al. (2012), voluntary ISA, injury accidents"))
     rows.append(row("ISA with warnings only: KSI benefit / mandatory ISA's", isa_share(runs["warning_only"]), np.nan,
                     isa_share(runs["warning_only_on"]), trial, LAI_ADVISORY_TO_UNIVERSAL,
@@ -376,6 +382,8 @@ def main() -> int:
         "Brenac's flatter curve": (distributions, replace(central_assumptions, urban_curve="brenac2015_exponential_coef",
                                                           rural_curve="brenac2015_exponential_coef"), central_isa),
         "Override at random": (distributions, central_assumptions, replace(central_isa, override_targets_speeding=False)),
+        "Override at the trial's own rate": (distributions, central_assumptions,
+                                             replace(central_isa, override_base=TRIAL_SHARE_OVER_LIMIT)),
         "Speed control in every car": (distributions, central_assumptions, replace(central_isa, speed_control_share=1.0)),
         "Warning only in every car": (distributions, central_assumptions, replace(central_isa, speed_control_share=0.0)),
         "ISA shows a van its own limit": (distributions, central_assumptions, replace(central_isa, vans_read_own_limit=True)),
@@ -397,6 +405,7 @@ def main() -> int:
 
     full = replace(central_assumptions, free_travel_share=1.0, free_travel_share_rural=1.0)
     never_off = replace(central_isa, switched_off=0.0)
+    trial_rate = replace(central_isa, override_base=TRIAL_SHARE_OVER_LIMIT, speed_control_share=1.0)
     validation = validate({
         "central": central[central["segment"] != ALL_ROADS],
         "all_responding": run(distributions, baseline, full),
@@ -406,6 +415,8 @@ def main() -> int:
         "warning_only": run(distributions, baseline, central_assumptions, replace(central_isa, speed_control_share=0.0)),
         "speed_control_on": run(distributions, baseline, central_assumptions, replace(never_off, speed_control_share=1.0)),
         "warning_only_on": run(distributions, baseline, central_assumptions, replace(never_off, speed_control_share=0.0)),
+        "speed_control_trial": run(distributions, baseline, central_assumptions, trial_rate),
+        "speed_control_on_trial": run(distributions, baseline, central_assumptions, replace(trial_rate, switched_off=0.0)),
         "trl_method": run(distributions, baseline, full, never_off),
     }, baseline)
 

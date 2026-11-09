@@ -192,6 +192,17 @@ def test_random_override_is_one_share_for_every_speed():
     assert held == pytest.approx(0.70 * (1 - URBAN_48.override_share))
 
 
+def test_override_at_the_trials_rate_divides_by_the_trials_share_over_the_limit():
+    trial = replace(CONTROL_ONLY, switched_off=0.0, override_base={road.segment: 0.40 for road in ROAD_TYPES})
+    held = held_to_limit(TODAY_48, URBAN_48, trial)
+    above = TODAY_48.speeds_kmh > URBAN_48.limit_kmh
+    assert 1 - held[above] == pytest.approx(np.full(above.sum(), URBAN_48.override_share / 0.40))
+    assert np.all(held[~above] == 1)
+    # here today's share above the limit is (70 - 48.28) / 40 = 0.54; dividing by the trial's 0.40 overrides more
+    central = held_to_limit(TODAY_48, URBAN_48, replace(CONTROL_ONLY, switched_off=0.0))
+    assert np.all(held[above] < central[above])
+
+
 def test_targeted_override_holds_back_less_speeding_than_random_override():
     targeted = apply_policy("bau_isa", TODAY_48, URBAN_48, held_to_limit(TODAY_48, URBAN_48, CONTROL_ONLY))
     random = apply_policy("bau_isa", TODAY_48, URBAN_48,
