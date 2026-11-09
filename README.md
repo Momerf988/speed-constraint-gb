@@ -39,13 +39,13 @@ DfT files → PostgreSQL (raw) → dbt: staging → intermediate → star schema
 91 data tests run on every build: key uniqueness, fact-to-dimension relationships, allowed
 values, row conservation from raw to facts and into the model's inputs, the rules of DfT's
 severity adjustment, and reconciliation against DfT's published casualty, traffic and speed
-figures. 119 pytest tests cover the models, the appraisal and the causal and machine-learning code.
+figures. 121 pytest tests cover the models, the appraisal and the causal and machine-learning code.
 
 ## Continuous integration and delivery
 
 Every push runs three jobs on GitHub Actions (`.github/workflows/ci.yml`):
 
-- **Python tests:** all 119; the one that re-reads DfT's raw appraisal spreadsheet is skipped,
+- **Python tests:** all 121; the one that re-reads DfT's raw appraisal spreadsheet is skipped,
   because CI does not hold it.
 - **The whole pipeline on a sample:** raw load, keys, code lookups, traffic, speeds, every dbt
   model and 89 of the 91 data tests, then the Parquet export, in a throwaway Postgres. The
@@ -111,7 +111,9 @@ draws] {lowest–highest across the models}.
   study's own method checks the code, not the free-travel share, which stays a judgement. One
   check does not agree: never switched off, overridable speed control here achieves 72% of
   mandatory ISA's benefit against 42% in the ISA-UK trials, so the baseline may be too strong and
-  the gains beyond it too small.
+  the gains beyond it too small. Dividing the trials' override by their own share of speeding,
+  rather than today's survey share, lowers the 72% only to 66%; most of the gap is probably that
+  trial drivers overrode for the larger excesses, which the model does not represent.
 
 Limits: DfT surveys speeds where traffic flows freely, which overstates speeding; the risk curves,
 and the shares of crashes involving a free-travelling vehicle (56% urban, 80% rural), come from
@@ -139,7 +141,8 @@ time cost, with no present values or hardware cost.
   compliance, which holds speeding cars to 97 km/h and vans to 80 km/h for free. What the cap
   adds is £403m of casualties and £44m of fuel and carbon against £494m of lawful time: a ratio
   of 0.90 [0.64–1.17] {0.49–1.32}. It pays only if under 63% of traffic on those roads flows
-  freely (70% assumed).
+  freely (70% assumed), or if injuries never reported to the police are counted (ratio 2.06), the
+  largest swing of any test.
 - **A flat limiter on every road does not pay.** Beyond compliance it returns 0.57 [0.53–0.61]
   at 97 km/h and 0.42 [0.37–0.46] at 80 km/h. Against business as usual the 97 km/h limiter
   looks like break-even (0.99), but only by bundling free compliance on single carriageways with
@@ -148,8 +151,9 @@ time cost, with no present values or hardware cost.
   road type, a 48 km/h cap on 97 km/h roads and motorway caps at 48, 60 and 80 km/h could not
   repay the time they cost, with or without unreported injuries.
 - **Scotland's appraisal agrees.** Counting all travel time, as Scotland's National Speed
-  Management Review does, the 80 km/h cap's casualty value is 0.94 of the time it removes (1.00
-  with the NSMR's kind of model), against the NSMR's 0.99: a consistency check, not a validation.
+  Management Review does, the 80 km/h cap's casualty value is 0.94 of the time it removes against
+  business as usual. Set up as the NSMR was (against today's speeds, with no ISA, and the Power
+  Model) it is 1.01, against the NSMR's 0.99: a consistency check, not a validation.
 - **Against the 2035 target** of 65% fewer KSI than 2022–2024 (18,801 fewer a year), the mandated
   ISA in every vehicle would deliver 6% [2–14%] {2–12%} and compliance a further 22% [14–35%]
   {5–27%}; the 80 km/h cap adds 3.5% beyond compliance. These are full-fleet steady states at
@@ -180,19 +184,21 @@ first results were seen.
   0.834. Adjusted KSI fell 16.7% more (0.833). Clustered 95% intervals (0.696–1.000 and
   0.714–0.973) treat the four Welsh forces as independent, so they are too narrow.
 - **Wales as one place.** Refitting the model with each English force in turn as if it alone had
-  the policy, Wales's change is the largest of the 17 comparably sized units, the strongest
-  result that test can give; with 17 units the smallest possible p is 0.06, so chance cannot yet
-  be ruled out at the 5% level. Permutation tests over sets of four English forces give
+  the policy, Wales's fall in all casualties is the largest of the 17 comparably sized units, the
+  strongest result that test can give; with 17 units the smallest possible p is 0.06, so chance
+  cannot yet be ruled out at the 5% level. For KSI, Wales ranks 3 of 15 (p = 0.20). Permutation
+  tests over sets of four English forces give
   p < 0.001, but they assume the Welsh forces move independently, which they do not.
 - **The before window was chosen after seeing the pre-trends**, so other readings are reported
-  beside it. If Wales's 2017–2023 decline relative to England had carried on, the ratio is 0.860
-  (0.680–1.087); counting 2017–2019 as "before" gives 0.752.
+  beside it. If Wales's 2017–2023 decline relative to England had carried on, the ratio is 0.860;
+  counting 2017–2019 as "before" gives 0.752.
 - **A synthetic control** puts Wales at 0.779 of its English counterpart, but 8 of 37 English
   forces depart as much from theirs (p = 0.24). With every force it gives 0.724, but that carries
   Staffordshire's recording recovery (weight 0.061, after-period index 262).
 - **Displacement?** Other Welsh roads were 8.1% higher than England's change implies (an interval
-  that includes no change), mostly Dyfed-Powys: without it, 2.7% for all casualties, and for KSI
-  0.984 against 1.087 with it. Across all Welsh roads together, KSI fell 10% (0.899, 0.817–0.990).
+  that includes no change), mostly Dyfed-Powys. Without it, other roads show no clear change:
+  1.027 (0.933–1.129) for all casualties and 0.984 for KSI, against 1.087 with it. Those intervals
+  already include no change, so the too-narrow clustering cannot have produced this finding.
 - Under the Exponential speed–risk model, the fall corresponds to 2.7–5.3 km/h lower mean speeds,
   depending on the coefficient: an illustration, not a test.
 
@@ -243,7 +249,7 @@ make export     # export the marts to Parquet in data/marts/
 make docs       # browse the documentation and lineage graph
 make rq1        # RQ1 rates and charts, written to figures/
 make values     # extract DfT's appraisal values into model/parameters/appraisal_values.csv
-make test       # run the 119 model tests
+make test       # run the 121 model tests
 make speeds     # speed distributions from DfT's bands, checked against DfT's own figures
 make rq2        # RQ2 and RQ4: casualties prevented by each policy, with Monte Carlo ranges
 make rq3        # RQ3: casualties, fuel, carbon and time cost of each policy, with the bound
