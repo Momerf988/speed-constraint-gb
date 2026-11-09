@@ -304,6 +304,10 @@ def sensitivity(cases: dict[str, tuple[float, float, float, float]]) -> pd.DataF
                          for name, (benefit, cost, extra, extra_cost) in cases.items()])
 
 
+def short_pays(share: float) -> str:
+    return "pays at any free-flow share" if share >= 1 else f"pays below {share:.0%} free flow"
+
+
 def pays_if(share: float) -> str:
     """The break-even free-flow share in words."""
     if share >= 1:
@@ -428,8 +432,10 @@ def chart_bcr(summary: pd.DataFrame, extra: pd.DataFrame, path: Path) -> None:
                 m = more.iloc[0]
                 ax.plot([m["bcr_p5"], m["bcr_p95"]], [y + 0.17, y + 0.17], color=c, lw=1.2, ls=(0, (3, 2)))
                 ax.plot(m["bcr"], y + 0.17, "o", ms=7.5, mfc=SURFACE, mec=c, mew=1.8)
-                ax.text(max(r["bcr_p95"], m["bcr_p95"]) * 1.15, y, f"against compliance: "
-                        f"{pays_if(m['break_even_free_flow'])}", va="center", fontsize=8, color=MUTED)
+                ax.text(r["bcr_p95"] * 1.12, y - 0.13, f"vs BAU: {short_pays(r['break_even_free_flow'])}", va="center",
+                        fontsize=7.5, color=MUTED)
+                ax.text(r["bcr_p95"] * 1.12, y + 0.17, f"vs compliance: {short_pays(m['break_even_free_flow'])}", va="center",
+                        fontsize=7.5, color=MUTED)
             else:
                 ax.text(r["bcr_p95"] * 1.15, y, pays_if(r["break_even_free_flow"]), va="center", fontsize=8, color=MUTED)
         else:
@@ -464,9 +470,9 @@ def chart_bcr(summary: pd.DataFrame, extra: pd.DataFrame, path: Path) -> None:
 
 
 def chart_sensitivity(sens: pd.DataFrame, path: Path) -> None:
-    """Net benefit of the focus cap with one assumption changed at a time, largest swing first."""
-    central = sens.loc[sens["sensitivity"] == "Central", "net"].iloc[0] / 1e6
-    rows = sens[sens["sensitivity"] != "Central"].assign(net_m=lambda d: d["net"] / 1e6)
+    """Net benefit of the focus cap beyond compliance, one assumption changed at a time, largest swing first."""
+    central = sens.loc[sens["sensitivity"] == "Central", "net_vs_compliance"].iloc[0] / 1e6
+    rows = sens[sens["sensitivity"] != "Central"].assign(net_m=lambda d: d["net_vs_compliance"] / 1e6)
     rows = rows.assign(swing=(rows["net_m"] - central).abs()).sort_values("swing").reset_index(drop=True)
     fig, ax = plt.subplots(figsize=(9, 5.2), facecolor=SURFACE)
     ax.set_facecolor(SURFACE)
@@ -476,7 +482,7 @@ def chart_sensitivity(sens: pd.DataFrame, path: Path) -> None:
                 ha="left" if r["net_m"] >= central else "right", fontsize=8, color=MUTED)
     ax.axvline(central, color=INK, lw=1)
     ax.axvline(0, color=MUTED, lw=1, ls=":")
-    ax.set_xlim(min(rows["net_m"].min(), central) - 120, max(rows["net_m"].max(), 0) + 80)
+    ax.set_xlim(min(rows["net_m"].min(), central) - 90, max(rows["net_m"].max(), 0) + 90)
     ax.set_yticks(range(len(rows)), rows["sensitivity"], fontsize=8.5, color=MUTED)
     ax.tick_params(axis="x", colors=MUTED, labelsize=9)
     ax.tick_params(axis="y", length=0)
@@ -484,8 +490,9 @@ def chart_sensitivity(sens: pd.DataFrame, path: Path) -> None:
     ax.set_axisbelow(True)
     for side in ("top", "right", "left"):
         ax.spines[side].set_visible(False)
-    ax.set_xlabel(f"Net benefit, £m a year (central {central:,.0f}; dotted line = break-even)", color=MUTED, fontsize=9)
-    ax.set_title(f"{POLICY_NAMES[FOCUS[1]]} on {FOCUS[0]}: what moves the answer", loc="left", fontsize=11, color=INK)
+    ax.set_xlabel(f"Net benefit beyond compliance, £m a year (central {central:,.0f}; dotted line = break-even)", color=MUTED, fontsize=9)
+    ax.set_title("80 km/h cap on 97 km/h roads, beyond compliance: what moves the answer", loc="left",
+                 fontsize=10.5, color=INK)
     fig.tight_layout()
     fig.savefig(path, dpi=300, facecolor=SURFACE)
     plt.close(fig)
