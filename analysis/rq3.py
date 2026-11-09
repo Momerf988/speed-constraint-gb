@@ -110,12 +110,13 @@ def benefits(table: pd.DataFrame, baseline: pd.DataFrame, values, ratios, includ
     return out
 
 
-def hours_table(distributions, count_speeding_time=False, roads=ROAD_TYPES, isa=None) -> pd.DataFrame:
+def hours_table(distributions, count_speeding_time=False, roads=ROAD_TYPES, isa=None, against="bau_isa") -> pd.DataFrame:
     """Hours lost per car-km and per van-km beyond business-as-usual ISA, per road type and policy.
 
     Lawful hours do not depend on how often ISA is switched off or overridden: a cap below a
     vehicle's limit binds it whatever ISA does, and a cap above costs no lawful time. So the central
-    shares serve every Monte Carlo draw.
+    shares serve every Monte Carlo draw. against="today" measures the hours against today's speeds
+    instead, as an appraisal with no ISA baseline would.
     """
     isa = IsaUse.central() if isa is None else isa
     rows = []
@@ -127,8 +128,8 @@ def hours_table(distributions, count_speeding_time=False, roads=ROAD_TYPES, isa=
             lost[vehicle] = {p: hours_lost_per_km(p, today, road, working, count_speeding_time, vehicle,
                                                   isa.limit_read(road, vehicle)) for p in POLICIES}
         rows += [{"segment": road.segment, "policy": p,
-                  "car_hours_per_km": lost["car"][p] - lost["car"]["bau_isa"],
-                  "van_hours_per_km": lost["van"][p] - lost["van"]["bau_isa"]} for p in POLICIES]
+                  "car_hours_per_km": lost["car"][p] - lost["car"][against],
+                  "van_hours_per_km": lost["van"][p] - lost["van"][against]} for p in POLICIES]
     return pd.DataFrame(rows)
 
 
@@ -413,6 +414,10 @@ def print_beyond_compliance(extra: pd.DataFrame, sens: pd.DataFrame, nsmr: pd.Da
                           ("Model A, Exponential", "casualty_benefit_exp")):
         print(f"   {label:22s} {millions(n[column]):>5s} / {millions(n['time_cost'])} = {n[column] / n['time_cost']:.3f}; "
               f"/ {millions(n['cost'])} = {n[column] / n['cost']:.3f}; against lawful time only {n[column] / n['lawful_time_cost']:.3f}")
+    print("   Set up as the NSMR was, with no ISA: the cap against today's speeds, all time counted (time only)")
+    for label, column in (("Model B", "today_casualty_benefit"), ("Model A, Power", "today_casualty_benefit_power"),
+                          ("Model A, Exponential", "today_casualty_benefit_exp")):
+        print(f"   {label:22s} {millions(n[column]):>5s} / {millions(n['today_time_cost'])} = {n[column] / n['today_time_cost']:.3f}")
     print("   NSMR (Transport Scotland 2024, Option 1): 440 / 443 = 0.993 at full compliance; 259 / 223 = 1.161 at realistic compliance")
 
 
@@ -628,12 +633,20 @@ def main() -> int:
     # convention here: the focus cap's casualty value against all time lost, lawful or gained by speeding.
     all_time_focus = focus_row(all_time)
     running = all_time_focus["fuel_benefit"] + all_time_focus["carbon_benefit"]
+    # The NSMR itself had no ISA baseline, so as it was set up the cap is measured against today's speeds
+    is_focus = ((casualties["segment"] == focus_road) & (casualties["policy"] == FOCUS[1])).to_numpy()
+    value_today = today_benefits[is_focus].iloc[0]
+    hours_today = focus_row(hours_table(distributions, count_speeding_time=True, against="today"))
+    time_today = time_cost(hours_today["car_hours_per_km"], hours_today["van_hours_per_km"], traffic.loc[focus_road, "cars"],
+                           traffic.loc[focus_road, "vans"], values, FREE_FLOW_SHARE[focus_road])
     nsmr = pd.DataFrame([{
         "segment": focus_road, "policy": FOCUS[1], "casualty_benefit": all_time_focus["casualty_benefit"],
         "casualty_benefit_power": all_time_focus["benefit_power"] - running,
         "casualty_benefit_exp": all_time_focus["benefit_exp"] - running,
         "time_cost": all_time_focus["time_cost"], "cost": all_time_focus["cost"],
-        "lawful_time_cost": focus["time_cost"], "lawful_cost": focus["cost"]}])
+        "lawful_time_cost": focus["time_cost"], "lawful_cost": focus["cost"],
+        "today_casualty_benefit": value_today["benefit"], "today_casualty_benefit_power": value_today["benefit_power"],
+        "today_casualty_benefit_exp": value_today["benefit_exp"], "today_time_cost": time_today}])
 
     summary.to_parquet(RESULTS / "appraisal.parquet", index=False, compression="zstd")
     sens.to_parquet(RESULTS / "appraisal_sensitivity.parquet", index=False, compression="zstd")

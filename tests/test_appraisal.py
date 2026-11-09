@@ -227,6 +227,23 @@ def test_beyond_compliance_is_the_cap_minus_compliance_where_it_binds_and_nothin
     assert r["net"] == pytest.approx(r["benefit"] - r["cost"])
 
 
+def test_hours_against_today_are_the_hours_beyond_bau_plus_bau_isas_own():
+    from analysis.rq3 import hours_table
+    from model.scenarios import Traffic
+    distributions = {road.segment: Traffic(uniform(0.6 * road.limit_kmh, 1.3 * road.limit_kmh),
+                                           uniform(0.6 * road.limit_kmh, 1.2 * road.limit_kmh), 0.2) for road in ROAD_TYPES}
+    columns = ["car_hours_per_km", "van_hours_per_km"]
+    vs_bau = hours_table(distributions, count_speeding_time=True).set_index(["segment", "policy"])
+    vs_today = hours_table(distributions, count_speeding_time=True, against="today").set_index(["segment", "policy"])
+    for road in ROAD_TYPES:
+        own = vs_today.loc[(road.segment, "bau_isa"), columns].to_numpy()
+        assert vs_today.loc[(road.segment, "today"), columns].to_numpy() == pytest.approx([0, 0])
+        assert np.all(own > 0)
+        for policy in ("compliance", "cap_80", "cap_60"):
+            assert vs_today.loc[(road.segment, policy), columns].to_numpy() == pytest.approx(
+                vs_bau.loc[(road.segment, policy), columns].to_numpy() + own)
+
+
 def test_override_shares_are_the_isa_uk_trial_shares_of_distance():
     # Lai and Carsten (2012), Table 5: share of distance driven with ISA overridden, 20, 30, 60 and 70 mph roads
     assert [road.override_share for road in ROAD_TYPES] == [0.133, 0.081, 0.013, 0.163]
