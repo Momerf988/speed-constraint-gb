@@ -3,9 +3,9 @@
 -- traffic is split across the modelled road types in proportion to that class's casualties
 -- in the same year: if 32% of rural A road casualties are on 97 km/h single carriageways,
 -- so is 32% of rural A road traffic.
--- Single carriageways have more casualties per km than dual carriageways, so this overstates
--- their traffic, and with it the time a cap costs on 97 km/h roads: the cautious direction
--- for judging a cap. The appraisal tests how much it matters.
+-- This could bias traffic either way: single carriageways have more casualties per km than dual
+-- carriageways, but so do village roads with 48 and 64 km/h limits. The appraisal tests 30% more
+-- and 30% less traffic on 97 km/h roads.
 
 with casualties as (
     select

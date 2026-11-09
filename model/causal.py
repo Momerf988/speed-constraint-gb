@@ -12,6 +12,10 @@ with the control. It cannot be proved, but an event study (the treated gap, peri
 should show no gap before the policy. With few treated forces, clustered standard errors are
 unreliable, so a permutation test asks how often the same number of control forces, chosen at
 random, show a change as large.
+
+Robustness tools for the same design: a version that lets the treated group keep its own earlier
+trend; a triple difference against the treated group's other roads; a synthetic control with
+placebo-in-space inference; and an exact permutation test restricted to control sets of similar size.
 """
 
 from __future__ import annotations
@@ -89,3 +93,156 @@ def permutation_test(totals: pd.DataFrame, treated_units, control_units, draws: 
 def implied_speed_change_kmh(rate_ratio: float, coefficient_per_kmh: float) -> float:
     """The change in mean speed that the Exponential model, exp(coef x change), needs to give this rate ratio."""
     return float(np.log(rate_ratio) / coefficient_per_kmh)
+
+
+def did_poisson_trend(panel: pd.DataFrame, outcome: str, treated: str, post: str, trend: str,
+                      unit: str = "police_force_code", time: str = "month") -> dict[str, float]:
+    """Difference-in-differences allowing the treated group its own linear trend, fitted before the policy only.
+
+    Every treated month after the policy gets its own term, so the trend term is identified by
+    the months before it alone, then carried forward. The effect is the average of those monthly
+    terms on the log scale: what is left after the treated group's earlier drift is projected on.
+    trend is a numeric column of time, in years.
+    """
+    data = panel.assign(treated_trend=panel[treated].astype(float) * panel[trend])
+    post_months = sorted(data.loc[data[treated] & data[post], time].unique())
+    names = []
+    for i, month in enumerate(post_months):
+        names.append(f"treated_post_{i}")
+        data[names[-1]] = (data[treated] & (data[time] == month)).astype(float)
+    fit = smf.glm(f"{outcome} ~ treated_trend + {' + '.join(names)} + C({unit}) + C({time})", data=data,
+                  family=sm.families.Poisson()).fit(cov_type="cluster", cov_kwds={"groups": data[unit]})
+    contrast = np.zeros(len(fit.params))
+    for name in names:
+        contrast[fit.params.index.get_loc(name)] = 1 / len(names)
+    test = fit.t_test(contrast)
+    coef, se = float(np.squeeze(test.effect)), float(np.squeeze(test.sd))
+    return {"rate_ratio": float(np.exp(coef)), "ci_low": float(np.exp(coef - Z95 * se)),
+            "ci_high": float(np.exp(coef + Z95 * se)), "p_value": float(np.squeeze(test.pvalue)),
+            "trend_per_year": float(np.exp(fit.params["treated_trend"]))}
+
+
+def ddd_poisson(panel: pd.DataFrame, outcome: str, treated: str, post: str, group: str, focus,
+                unit: str = "police_force_code", time: str = "month") -> dict[str, float]:
+    """Triple difference: the treated group's change on one road group, against its change on the others.
+
+    Fixed effects for each unit and road group, each month and road group (anything that hit one
+    kind of road nationally), and each month in the treated group (anything that hit all its
+    roads at once). exp(beta) is then the change on the focus roads relative to the treated
+    group's other roads, net of the same contrast in the control group.
+    """
+    in_focus = panel[group] == focus
+    later = panel[time] != panel[time].min()
+    # Month effects common to both road groups, plus extra ones for the focus roads and for the
+    # treated group. Each extra set leaves its first month as the reference, so it cannot add up
+    # to a road group's or a force's own fixed effect.
+    data = panel.assign(
+        triple=(panel[treated] & panel[post] & in_focus).astype(float),
+        unit_group=panel[unit].astype(str) + "|" + panel[group].astype(str),
+        focus_time=np.where(in_focus & later, panel[time].astype(str), "0 reference"),
+        treated_time=np.where(panel[treated] & later, panel[time].astype(str), "0 reference"),
+    )
+    fit = smf.glm(f"{outcome} ~ triple + C(unit_group) + C({time}) + C(focus_time) + C(treated_time)", data=data,
+                  family=sm.families.Poisson()).fit(cov_type="cluster", cov_kwds={"groups": data[unit]})
+    coef, se = fit.params["triple"], fit.bse["triple"]
+    return {"rate_ratio": float(np.exp(coef)), "ci_low": float(np.exp(coef - Z95 * se)),
+            "ci_high": float(np.exp(coef + Z95 * se)), "p_value": float(fit.pvalues["triple"])}
+
+
+def synthetic_weights(target: np.ndarray, donors: np.ndarray) -> np.ndarray:
+    """Non-negative donor weights summing to 1 that best reproduce the target before the policy.
+
+    target has one value per month; donors one row per month and one column per donor. The
+    sum-to-one condition is added as an extra, heavily weighted row of a non-negative least squares.
+    """
+    from scipy.optimize import nnls
+    scale = 1e3 * max(1.0, float(np.abs(target).max()))
+    a = np.vstack([donors, np.full((1, donors.shape[1]), scale)])
+    b = np.append(target, scale)
+    weights, _ = nnls(a, b)
+    return weights / weights.sum()
+
+
+def synthetic_control(series: pd.DataFrame, treated: str, donors: list, pre: np.ndarray) -> dict:
+    """Abadie-style synthetic control on series indexed to each unit's mean before the policy (= 100).
+
+    series has one row per month and one column per unit; pre marks the months before the policy.
+    Returns the weights, the treated and synthetic paths, the post-policy ratio of their means,
+    and the root mean squared prediction error before and after.
+    """
+    index = 100 * series / series[pre].mean()
+    weights = synthetic_weights(index.loc[pre, treated].to_numpy(), index.loc[pre, donors].to_numpy())
+    synthetic = index[donors].to_numpy() @ weights
+    actual = index[treated].to_numpy()
+    gap = actual - synthetic
+    rmspe_pre, rmspe_post = np.sqrt(np.mean(gap[pre] ** 2)), np.sqrt(np.mean(gap[~pre] ** 2))
+    return {"weights": dict(zip(donors, weights)), "actual": actual, "synthetic": synthetic,
+            "ratio": float(actual[~pre].mean() / synthetic[~pre].mean()),
+            "gap_post": float(gap[~pre].mean()), "rmspe_pre": float(rmspe_pre), "rmspe_post": float(rmspe_post),
+            "rmspe_ratio": float(rmspe_post / rmspe_pre)}
+
+
+def synthetic_placebo(series: pd.DataFrame, treated: str, donors: list, pre: np.ndarray) -> dict:
+    """Placebo-in-space inference: refit the synthetic control with each donor as if it were treated.
+
+    The p-value is the treated unit's rank by the ratio of post- to pre-policy prediction error,
+    among itself and every placebo: (number at least as large) / (number of units).
+    """
+    actual = synthetic_control(series, treated, donors, pre)
+    placebos = {d: synthetic_control(series, d, [x for x in donors if x != d], pre) for d in donors}
+    ratios = np.array([p["rmspe_ratio"] for p in placebos.values()])
+    rank = int(np.sum(ratios >= actual["rmspe_ratio"])) + 1
+    return {**actual, "p_value": rank / (len(donors) + 1), "rank": rank, "units": len(donors) + 1,
+            "placebo_ratios": {d: p["ratio"] for d, p in placebos.items()}}
+
+
+def size_matched_permutation(totals: pd.DataFrame, treated_units, control_units, tolerance: float | None = 0.5) -> dict:
+    """Exact permutation test over every set of control units, optionally only those of similar size.
+
+    Each set of len(treated_units) control units is compared with the remaining controls by the
+    ratio of ratios. With tolerance, only sets whose "before" total is within that fraction of the
+    treated group's are kept, so small forces cannot stand in for a large country.
+    """
+    from itertools import combinations
+    controls = totals.loc[list(control_units)]
+    before, after = controls["before"].to_numpy(), controls["after"].to_numpy()
+    sets = np.array(list(combinations(range(len(controls)), len(treated_units))))
+    set_before, set_after = before[sets].sum(axis=1), after[sets].sum(axis=1)
+    placebo = (set_after / set_before) / ((after.sum() - set_after) / (before.sum() - set_before))
+    actual = ratio_of_ratios(totals.loc[list(treated_units) + list(control_units)], treated_units)
+    treated_before = totals.loc[list(treated_units), "before"].sum()
+    keep = np.ones(len(sets), dtype=bool) if tolerance is None else np.abs(set_before / treated_before - 1) <= tolerance
+    p_value = float(np.mean(np.abs(np.log(placebo[keep])) >= abs(np.log(actual))))
+    return {"ratio_of_ratios": actual, "p_value": p_value, "sets": int(keep.sum())}
+
+
+def single_unit_placebo(panel: pd.DataFrame, outcome: str, treated: str, post: str, tolerance: float | None = None,
+                        unit: str = "police_force_code") -> dict:
+    """Placebo in space with the treated group as one unit: how does it rank among single control units?
+
+    The treated group's rate ratio comes from the full panel. Then each control unit in turn is
+    treated as if it alone had the policy, and the model is refitted on the control units only.
+    Unlike a permutation over sets of control units, this does not assume the treated units' shocks
+    are independent of one another: the treated group is one draw, compared with single units.
+    The p-value counts the treated group itself: (1 + controls at least as far from 1, on the log
+    scale) / (1 + controls), so with n controls it can never fall below 1 / (n + 1). With tolerance,
+    a second test keeps only control units whose before-period total is within that fraction of the
+    treated group's.
+    """
+    actual = did_poisson(panel, outcome, treated, post, unit)["rate_ratio"]
+    controls = panel[~panel[treated]]
+    before = controls[~controls[post]].groupby(unit)[outcome].sum()
+    treated_before = panel[panel[treated] & ~panel[post]][outcome].sum()
+    placebo = pd.Series({u: did_poisson(controls.assign(placebo_treated=controls[unit] == u), outcome,
+                                        "placebo_treated", post, unit)["rate_ratio"] for u in before.index})
+
+    def test(units) -> dict:
+        as_far = int((np.abs(np.log(placebo[units])) >= abs(np.log(actual))).sum())
+        return {"p_value": (1 + as_far) / (1 + len(units)), "rank": 1 + as_far, "units": 1 + len(units),
+                "smallest_p": 1 / (1 + len(units))}
+
+    out = {"rate_ratio": actual, "all": test(list(before.index)), "placebo": placebo.to_dict()}
+    if tolerance is not None:
+        similar = list(before.index[(before / treated_before - 1).abs() <= tolerance])
+        out["similar"] = test(similar) | {"tolerance": tolerance}
+    return out

@@ -9,9 +9,10 @@ Before reading each value, the script checks the labels beside it (row name, col
 price year). If DfT moves a table in a future version, it stops instead of reading the wrong
 cell. Cells are read as values saved in the file: the workbook's macros are never run.
 
-TAG values are in 2023 prices and 2023 values, market prices. RAS4001 is used for two
-sensitivity tests only: its older casualty values, and DfT's estimate of injuries never
-reported to the police.
+TAG values are in 2023 prices and 2023 values, market prices. Fuel and carbon are read for 2023,
+the central year, and for 2035, a sensitivity test with far more electric vehicles, still in 2023
+prices. RAS4001 is used for two sensitivity tests only: its older casualty values, and DfT's
+estimate of injuries never reported to the police.
 
 Usage:
     python ingest/extract_appraisal_values.py
@@ -69,6 +70,59 @@ TAG_CELLS = [
 ]
 PRICE_YEAR_SHEETS = ("A4.1.1", "A4.1.3", "A1.3.1")   # sheets that state their price and value year in B14:B15
 
+# Fuel and carbon, for 2023 (central) and 2035 (a sensitivity test): row of that year in each table.
+FUEL_YEAR_ROWS = {2023: {"A1.3.11": 39, "A1.3.9": 45, "A1.3.7": 41, "A3.3": 40, "A3.4": 39},
+                  2035: {"A1.3.11": 51, "A1.3.9": 57, "A1.3.7": 53, "A3.3": 52, "A3.4": 51}}
+FUEL_CURVE_COLUMNS = {"petrol_car": "DEFG", "diesel_car": "HIJK", "petrol_van": "PQRS", "diesel_van": "TUVW"}
+FUEL_SHARE_COLUMNS = {"petrol_car": ("D", "Petrol"), "diesel_car": ("E", "Diesel"), "electric_car": ("F", "Electric"),
+                      "petrol_van": ("G", "Petrol"), "diesel_van": ("H", "Diesel"), "electric_van": ("I", "Electric")}
+# Group headings above the columns those rows are read from: (sheet, cell, expected).
+TAG_GROUP_LABELS = [
+    ("A1.3.11", "D24", "Petrol Car"), ("A1.3.11", "H24", "Diesel Car"), ("A1.3.11", "P24", "Petrol LGV"),
+    ("A1.3.11", "T24", "Diesel LGV"), ("A1.3.9", "D24", "Cars"), ("A1.3.9", "G24", "LGV"),
+    ("A1.3.7", "D24", "Resource Cost"), ("A1.3.7", "I24", "Duty"), ("A1.3.7", "M24", "VAT rate"),
+    ("A3.3", "D26", "kg CO2e/l"), ("A3.4", "G24", "Market price unit of account"),
+    ("A1.3.14", "A27", "Car"), ("A1.3.14", "A33", "LGV"),
+]
+# Cells that do not change by year: speed ranges of the fuel curves, and vehicle capital saving.
+TAG_FIXED_CELLS = [
+    ("fuel_min_speed_petrol_car", "A1.3.8", "A27", "Petrol Car", "H27", "H25", "Min speed", "km/h", 1),
+    ("fuel_max_speed_petrol_car", "A1.3.8", "A27", "Petrol Car", "I27", "I25", "Max speed", "km/h", 1),
+    ("fuel_min_speed_diesel_car", "A1.3.8", "A28", "Diesel Car", "H28", "H25", "Min speed", "km/h", 1),
+    ("fuel_max_speed_diesel_car", "A1.3.8", "A28", "Diesel Car", "I28", "I25", "Max speed", "km/h", 1),
+    ("fuel_min_speed_petrol_van", "A1.3.8", "A29", "Petrol LGV", "H29", "H25", "Min speed", "km/h", 1),
+    ("fuel_max_speed_petrol_van", "A1.3.8", "A29", "Petrol LGV", "I29", "I25", "Max speed", "km/h", 1),
+    ("fuel_min_speed_diesel_van", "A1.3.8", "A30", "Diesel LGV", "H30", "H25", "Min speed", "km/h", 1),
+    ("fuel_max_speed_diesel_van", "A1.3.8", "A30", "Diesel LGV", "I30", "I25", "Max speed", "km/h", 1),
+    ("capital_saving_car_work", "A1.3.14", "B27", "Work Petrol", "E27", "E26", "b1 p / hr", "£ per vehicle-hour", 0.01),
+    ("capital_saving_van_services", "A1.3.14", "B35", "Work (services)", "E35", "E26", "b1 p / hr", "£ per vehicle-hour", 0.01),
+]
+
+
+def fuel_cells() -> list[tuple]:
+    """The year-by-year fuel and carbon cells, in the same form as TAG_CELLS."""
+    cells = []
+    for year, rows in FUEL_YEAR_ROWS.items():
+        curve, share, price, co2, carbon = (rows[s] for s in ("A1.3.11", "A1.3.9", "A1.3.7", "A3.3", "A3.4"))
+        for fuel, columns in FUEL_CURVE_COLUMNS.items():
+            for parameter, column in zip("abcd", columns):
+                cells.append((f"fuel_{parameter}_{fuel}_{year}", "A1.3.11", f"B{curve}", year, f"{column}{curve}",
+                              f"{column}25", parameter, "litres per km parameter", 1))
+        for fuel, (column, header) in FUEL_SHARE_COLUMNS.items():
+            cells.append((f"km_share_{fuel}_{year}", "A1.3.9", f"B{share}", year, f"{column}{share}",
+                          f"{column}25", header, "share of vehicle-km", 1))
+        for name, column, header, unit, scale in (
+                ("fuel_resource_petrol", "D", "Petrol", "£ per litre", 0.01), ("fuel_resource_diesel", "E", "Diesel", "£ per litre", 0.01),
+                ("fuel_duty_petrol", "I", "Petrol", "£ per litre", 0.01), ("fuel_duty_diesel", "J", "Diesel", "£ per litre", 0.01),
+                ("fuel_vat_petrol", "M", "Petrol", "share", 0.01), ("fuel_vat_diesel", "N", "Diesel", "share", 0.01)):
+            cells.append((f"{name}_{year}", "A1.3.7", f"B{price}", year, f"{column}{price}", f"{column}25", header, unit, scale))
+        for name, column, header in (("co2_per_litre_petrol", "D", "Petrol"), ("co2_per_litre_diesel", "E", "Diesel")):
+            cells.append((f"{name}_{year}", "A3.3", f"B{co2}", year, f"{column}{co2}", f"{column}24", header, "kg CO2e per litre", 1))
+        for name, column, header in (("carbon_low", "G", "Low"), ("carbon_central", "H", "Central"), ("carbon_high", "I", "High")):
+            cells.append((f"{name}_{year}", "A3.4", f"B{carbon}", year, f"{column}{carbon}", f"{column}25", header,
+                          "£ per tonne CO2e", 1))
+    return cells
+
 
 def clean(value):
     """TAG labels carry stray spaces ('Work ', 'Other '); collapse them."""
@@ -91,8 +145,16 @@ def tag_values(path: Path) -> list[dict]:
     if any(float(c) != 0 for c in changes):
         raise ValueError(f"A1.3.3: occupancy is no longer constant over time: {changes}")
 
+    for sheet in ("A1.3.7", "A1.3.14", "A3.4"):
+        if int(book[sheet]["B14"].value) != PRICE_YEAR:
+            raise ValueError(f"{sheet}: expected {PRICE_YEAR} prices, found {book[sheet]['B14'].value}")
+    for sheet, cell, expected in TAG_GROUP_LABELS:
+        if clean(book[sheet][cell].value) != expected:
+            raise ValueError(f"{sheet}: expected {expected!r} in {cell}, found {book[sheet][cell].value!r}")
+
     rows = []
-    for value_id, sheet, label_cell, label, value_cell, header_cell, header, unit, scale in TAG_CELLS:
+    for value_id, sheet, label_cell, label, value_cell, header_cell, header, unit, scale in (
+            TAG_CELLS + TAG_FIXED_CELLS + fuel_cells()):
         ws = book[sheet]
         found_label, found_header = clean(ws[label_cell].value), clean(ws[header_cell].value)
         if found_label != label or found_header != header:

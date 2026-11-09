@@ -28,6 +28,82 @@ van_km_share_freight,0.243571984286221,share of vehicle-km,TAG data book May 202
 van_km_share_services,0.611397124069421,share of vehicle-km,TAG data book May 2026 v2.03,A1.3.4!J31,
 van_km_share_commuting,0.08333620789813499,share of vehicle-km,TAG data book May 2026 v2.03,A1.3.4!J32,
 van_km_share_other,0.0616946837462228,share of vehicle-km,TAG data book May 2026 v2.03,A1.3.4!J33,
+fuel_min_speed_petrol_car,10.0,km/h,TAG data book May 2026 v2.03,A1.3.8!H27,
+fuel_max_speed_petrol_car,130.0,km/h,TAG data book May 2026 v2.03,A1.3.8!I27,
+fuel_min_speed_diesel_car,10.0,km/h,TAG data book May 2026 v2.03,A1.3.8!H28,
+fuel_max_speed_diesel_car,130.0,km/h,TAG data book May 2026 v2.03,A1.3.8!I28,
+fuel_min_speed_petrol_van,10.0,km/h,TAG data book May 2026 v2.03,A1.3.8!H29,
+fuel_max_speed_petrol_van,120.0,km/h,TAG data book May 2026 v2.03,A1.3.8!I29,
+fuel_min_speed_diesel_van,10.0,km/h,TAG data book May 2026 v2.03,A1.3.8!H30,
+fuel_max_speed_diesel_van,110.0,km/h,TAG data book May 2026 v2.03,A1.3.8!I30,
+capital_saving_car_work,1.8930220115896277,£ per vehicle-hour,TAG data book May 2026 v2.03,A1.3.14!E27,2023
+capital_saving_van_services,0.65603950121388,£ per vehicle-hour,TAG data book May 2026 v2.03,A1.3.14!E35,2023
+fuel_a_petrol_car_2023,0.4272267039518504,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!D39,
+fuel_b_petrol_car_2023,0.09079260459491752,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!E39,
+fuel_c_petrol_car_2023,-0.0010342354359869123,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!F39,
+fuel_d_petrol_car_2023,6.849658076555597e-06,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!G39,
+fuel_a_diesel_car_2023,0.47801367311774773,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!H39,
+fuel_b_diesel_car_2023,0.0685353394603887,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!I39,
+fuel_c_diesel_car_2023,-0.0006593290582299742,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!J39,
+fuel_d_diesel_car_2023,5.1955460578846515e-06,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!K39,
+fuel_a_petrol_van_2023,0.3119920324026117,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!P39,
+fuel_b_petrol_van_2023,0.17494707167157023,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!Q39,
+fuel_c_petrol_van_2023,-0.0027460947799265983,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!R39,
+fuel_d_petrol_van_2023,1.7734382716756808e-05,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!S39,
+fuel_a_diesel_van_2023,0.44232472532576655,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!T39,
+fuel_b_diesel_van_2023,0.10810596548960412,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!U39,
+fuel_c_diesel_van_2023,-0.0015596250286166525,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!V39,
+fuel_d_diesel_van_2023,1.3203839871941834e-05,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!W39,
+km_share_petrol_car_2023,0.5508410975265149,share of vehicle-km,TAG data book May 2026 v2.03,A1.3.9!D45,
+km_share_diesel_car_2023,0.4030872896054189,share of vehicle-km,TAG data book May 2026 v2.03,A1.3.9!E45,
+km_share_electric_car_2023,0.04606625743196812,share of vehicle-km,TAG data book May 2026 v2.03,A1.3.9!F45,
+km_share_petrol_van_2023,0.02427699497726281,share of vehicle-km,TAG data book May 2026 v2.03,A1.3.9!G45,
+km_share_diesel_van_2023,0.9549457798770736,share of vehicle-km,TAG data book May 2026 v2.03,A1.3.9!H45,
+km_share_electric_van_2023,0.020776663961698486,share of vehicle-km,TAG data book May 2026 v2.03,A1.3.9!I45,
+fuel_resource_petrol_2023,0.7425400692550649,£ per litre,TAG data book May 2026 v2.03,A1.3.7!D41,2023
+fuel_resource_diesel_2023,0.7563304241753747,£ per litre,TAG data book May 2026 v2.03,A1.3.7!E41,2023
+fuel_duty_petrol_2023,0.5398251503887095,£ per litre,TAG data book May 2026 v2.03,A1.3.7!I41,2023
+fuel_duty_diesel_2023,0.5398251503887095,£ per litre,TAG data book May 2026 v2.03,A1.3.7!J41,2023
+fuel_vat_petrol_2023,0.2,share,TAG data book May 2026 v2.03,A1.3.7!M41,
+fuel_vat_diesel_2023,0.2,share,TAG data book May 2026 v2.03,A1.3.7!N41,
+co2_per_litre_petrol_2023,2.1143039057122337,kg CO2e per litre,TAG data book May 2026 v2.03,A3.3!D40,
+co2_per_litre_diesel_2023,2.472458025221967,kg CO2e per litre,TAG data book May 2026 v2.03,A3.3!E40,
+carbon_low_2023,169.45141418175396,£ per tonne CO2e,TAG data book May 2026 v2.03,A3.4!G39,2023
+carbon_central_2023,338.9028283635079,£ per tonne CO2e,TAG data book May 2026 v2.03,A3.4!H39,2023
+carbon_high_2023,508.3542425452619,£ per tonne CO2e,TAG data book May 2026 v2.03,A3.4!I39,2023
+fuel_a_petrol_car_2035,0.40733269149002116,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!D51,
+fuel_b_petrol_car_2035,0.08656480424782874,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!E51,
+fuel_c_petrol_car_2035,-0.0009860757763456274,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!F51,
+fuel_d_petrol_car_2035,6.530700525742892e-06,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!G51,
+fuel_a_diesel_car_2035,0.4953911163863735,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!H51,
+fuel_b_diesel_car_2035,0.0710268350814262,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!I51,
+fuel_c_diesel_car_2035,-0.0006832979401868833,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!J51,
+fuel_d_diesel_car_2035,5.384422050241848e-06,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!K51,
+fuel_a_petrol_van_2035,0.30999777078303103,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!P51,
+fuel_b_petrol_van_2035,0.17382880519596222,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!Q51,
+fuel_c_petrol_van_2035,-0.0027285416668513533,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!R51,
+fuel_d_petrol_van_2035,1.7621024056515948e-05,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!S51,
+fuel_a_diesel_van_2035,0.43804856509985945,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!T51,
+fuel_b_diesel_van_2035,0.10706085450362099,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!U51,
+fuel_c_diesel_van_2035,-0.001544547403214211,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!V51,
+fuel_d_diesel_van_2035,1.3076192169571e-05,litres per km parameter,TAG data book May 2026 v2.03,A1.3.11!W51,
+km_share_petrol_car_2035,0.3569421944644234,share of vehicle-km,TAG data book May 2026 v2.03,A1.3.9!D57,
+km_share_diesel_car_2035,0.08998170341277799,share of vehicle-km,TAG data book May 2026 v2.03,A1.3.9!E57,
+km_share_electric_car_2035,0.5530747413175617,share of vehicle-km,TAG data book May 2026 v2.03,A1.3.9!F57,
+km_share_petrol_van_2035,0.023289257960897213,share of vehicle-km,TAG data book May 2026 v2.03,A1.3.9!G57,
+km_share_diesel_van_2035,0.5413228454977304,share of vehicle-km,TAG data book May 2026 v2.03,A1.3.9!H57,
+km_share_electric_van_2035,0.4353877496588443,share of vehicle-km,TAG data book May 2026 v2.03,A1.3.9!I57,
+fuel_resource_petrol_2035,0.595197216236619,£ per litre,TAG data book May 2026 v2.03,A1.3.7!D53,2023
+fuel_resource_diesel_2035,0.6046864540170749,£ per litre,TAG data book May 2026 v2.03,A1.3.7!E53,2023
+fuel_duty_petrol_2035,0.5772719740509922,£ per litre,TAG data book May 2026 v2.03,A1.3.7!I53,2023
+fuel_duty_diesel_2035,0.5772719740509922,£ per litre,TAG data book May 2026 v2.03,A1.3.7!J53,2023
+fuel_vat_petrol_2035,0.2,share,TAG data book May 2026 v2.03,A1.3.7!M53,
+fuel_vat_diesel_2035,0.2,share,TAG data book May 2026 v2.03,A1.3.7!N53,
+co2_per_litre_petrol_2035,2.114308057532836,kg CO2e per litre,TAG data book May 2026 v2.03,A3.3!D52,
+co2_per_litre_diesel_2035,2.3826240154029055,kg CO2e per litre,TAG data book May 2026 v2.03,A3.3!E52,
+carbon_low_2035,203.14700864276887,£ per tonne CO2e,TAG data book May 2026 v2.03,A3.4!G51,2023
+carbon_central_2035,406.29401728553773,£ per tonne CO2e,TAG data book May 2026 v2.03,A3.4!H51,2023
+carbon_high_2035,609.4410259283068,£ per tonne CO2e,TAG data book May 2026 v2.03,A3.4!I51,2023
 previous_casualty_fatal,2411658.874962044,£ per casualty,"RAS4001 (2026), based on the September 2024 TAG data book","Average_value: 2023, Fatal",2023
 previous_casualty_serious,271002.92295809614,£ per casualty,"RAS4001 (2026), based on the September 2024 TAG data book","Average_value: 2023, Serious",2023
 previous_casualty_slight,20891.581693569402,£ per casualty,"RAS4001 (2026), based on the September 2024 TAG data book","Average_value: 2023, Slight",2023

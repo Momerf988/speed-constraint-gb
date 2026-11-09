@@ -166,6 +166,22 @@ models:
       - name: van_billion_vehicle_km
         data_tests: [not_null]
 
+  - name: agg_speed_bands_vans
+    description: Free-flow van speed bands by year and road type, on the three road types where DfT publishes them. Same columns as agg_speed_bands_cars.
+    columns:
+      - name: share_pct
+        description: Null where DfT printed "[low]".
+      - name: pct_exceeding
+        data_tests: [not_null]
+
+  - name: agg_speed_summary_vans
+    description: Average free-flow speed of vans and cars per year and road type. All DfT publishes for vans on national-limit single carriageways.
+    columns:
+      - name: van_avg_free_flow_kmh
+        data_tests: [not_null]
+      - name: car_avg_free_flow_kmh
+        data_tests: [not_null]
+
   - name: agg_collisions_per_casualty
     description: Collisions per casualty by severity and year, from 2010, so per-collision costs (police, insurance, property damage) can be attached to casualties prevented.
     columns:
